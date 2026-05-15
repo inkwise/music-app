@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+
+    <!-- 允许本地 / 局域网 http -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- 模拟器访问宿主机 -->
+        <domain includeSubdomains="true">10.0.2.2</domain>
+
+        <!-- 真机访问电脑（示例，按你实际 IP 改） -->
+        <domain includeSubdomains="true">192.168.1.100</domain>
+
+        <!-- 本机服务 -->
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+
+    <!-- 允许阿里云 OSS HTTP 访问（封面图等静态资源） -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">aliyuncs.com</domain>
+    </domain-config>
+
+</network-security-config>

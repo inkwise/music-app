@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 enum class CloudSortBy(val label: String, val apiField: String) {
@@ -216,7 +217,26 @@ class CloudViewModel @Inject constructor(
      */
     private suspend fun checkFingerprintMatches(token: String?) {
         try {
-            val allFingerprints = fingerprintDao.getAll()
+            // 确保本地指纹已生成
+            var allFingerprints = fingerprintDao.getAll()
+            if (allFingerprints.isEmpty()) {
+                if (fingerprintManager.isScanning) {
+                    // 后台正在扫描，等待其完成（最多 30 秒）
+                    Log.d(TAG, "等待后台指纹扫描完成...")
+                    var waited = 0
+                    while (fingerprintManager.isScanning && waited < 300) {
+                        kotlinx.coroutines.delay(100)
+                        waited++
+                    }
+                } else {
+                    Log.d(TAG, "本地指纹为空，开始生成指纹...")
+                    withContext(Dispatchers.IO) {
+                        fingerprintManager.scanAll()
+                    }
+                }
+                allFingerprints = fingerprintDao.getAll()
+                Log.d(TAG, "指纹生成完成，共 ${allFingerprints.size} 条")
+            }
             if (allFingerprints.isEmpty()) {
                 Log.d(TAG, "暂无本地指纹，跳过指纹匹配")
                 return

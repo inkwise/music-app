@@ -164,5 +164,6 @@ data class UploadResult(
     val filename: String,
     val success: Boolean,
     val music: MusicItem?,
-    val error: String?
+    val error: String?,
+    val duplicate: Boolean = false
 )

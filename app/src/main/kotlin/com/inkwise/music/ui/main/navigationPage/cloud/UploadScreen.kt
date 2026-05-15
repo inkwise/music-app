@@ -61,18 +61,12 @@ fun UploadScreen(
     LaunchedEffect(uiState.uploadResponse) {
         uiState.uploadResponse?.let { response ->
             val successCount = response.results.count { it.success }
-            val failCount = response.results.count { !it.success }
-            if (failCount > 0) {
-                val failures = response.results.filter { !it.success }
-                    .joinToString("; ") { "${it.filename}: ${it.error}" }
-                Toast.makeText(
-                    context,
-                    "上传完成: ${successCount}成功, ${failCount}失败。$failures",
-                    Toast.LENGTH_LONG
-                ).show()
-            } else {
-                Toast.makeText(context, "${successCount}个文件上传成功", Toast.LENGTH_SHORT).show()
-            }
+            val dupCount = response.results.count { it.duplicate }
+            val failCount = response.results.count { !it.success && !it.duplicate }
+            var msg = "上传完成: ${successCount}成功"
+            if (dupCount > 0) msg += ", ${dupCount}重复跳过"
+            if (failCount > 0) msg += ", ${failCount}失败"
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
             viewModel.clearResult()
             onUploadComplete()
             onBack()

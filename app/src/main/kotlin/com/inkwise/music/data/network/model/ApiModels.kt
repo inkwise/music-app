@@ -153,3 +153,16 @@ data class ReorderMusicRequest(
 data class ReorderMusicResponse(
     val message: String
 )
+
+// 批量上传
+data class BatchUploadResponse(
+    val message: String,
+    val results: List<UploadResult>
+)
+
+data class UploadResult(
+    val filename: String,
+    val success: Boolean,
+    val music: MusicItem?,
+    val error: String?
+)

@@ -6,6 +6,7 @@ import com.inkwise.music.data.network.model.AuthResponse
 import com.inkwise.music.data.network.model.AvatarResponse
 import com.inkwise.music.data.network.model.BatchDeleteMusicRequest
 import com.inkwise.music.data.network.model.BatchDeleteMusicResponse
+import com.inkwise.music.data.network.model.BatchUploadResponse
 import com.inkwise.music.data.network.model.FingerprintCheckRequest
 import com.inkwise.music.data.network.model.FingerprintCheckResponse
 import com.inkwise.music.data.network.model.HealthResponse
@@ -128,4 +129,11 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Body request: FingerprintCheckRequest
     ): Response<FingerprintCheckResponse>
+
+    @Multipart
+    @POST("/music/upload/batch")
+    suspend fun uploadMusic(
+        @Header("Authorization") token: String,
+        @Part files: List<MultipartBody.Part>
+    ): Response<BatchUploadResponse>
 }

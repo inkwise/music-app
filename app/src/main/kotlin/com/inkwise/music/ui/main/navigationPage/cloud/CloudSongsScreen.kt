@@ -108,6 +108,7 @@ fun CloudSongsScreen(
     var actionSong by remember { mutableStateOf<Song?>(null) }
     var infoSong by remember { mutableStateOf<Song?>(null) }
     var infoFingerprint by remember { mutableStateOf<String?>(null) }
+    var showUpload by remember { mutableStateOf(false) }
 
     // ── 多选状态 ──
     var multiSelectMode by remember { mutableStateOf(false) }
@@ -124,6 +125,17 @@ fun CloudSongsScreen(
     }
 
     val selectedSongs = uiState.songs.filter { it.id in selectedIds }
+
+    if (showUpload) {
+        UploadScreen(
+            onBack = {
+                showUpload = false
+                cloudViewModel.refresh()
+            },
+            onUploadComplete = { cloudViewModel.refresh() }
+        )
+        return
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // ── 工具栏 ──
@@ -162,6 +174,18 @@ fun CloudSongsScreen(
                     Text(text = uiState.songs.size.toString())
                 }
                 Row {
+                    IconButton(
+                        onClick = { showUpload = true },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_add),
+                            contentDescription = "上传",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
                     IconButton(
                         onClick = { showSortSheet = true },
                         modifier = Modifier.size(24.dp)

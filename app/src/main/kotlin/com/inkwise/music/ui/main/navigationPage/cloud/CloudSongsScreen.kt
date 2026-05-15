@@ -179,12 +179,18 @@ fun CloudSongsScreen(
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_add),
+                            painter = painterResource(id = R.drawable.ic_upload),
                             contentDescription = "上传",
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(22.dp)
                         )
                     }
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        text = "上传",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.width(6.dp))
                     IconButton(
                         onClick = { showSortSheet = true },

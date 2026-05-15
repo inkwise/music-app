@@ -29,6 +29,7 @@ data class SelectedFile(
 data class UploadUiState(
     val selectedFiles: List<SelectedFile> = emptyList(),
     val isUploading: Boolean = false,
+    val uploadProgress: String = "",
     val uploadResponse: BatchUploadResponse? = null,
     val error: String? = null
 )
@@ -41,7 +42,7 @@ class UploadViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "UploadVM"
-        const val MAX_FILES = 3
+        private const val BATCH_SIZE = 3
     }
 
     private val _uiState = MutableStateFlow(UploadUiState())
@@ -50,7 +51,6 @@ class UploadViewModel @Inject constructor(
     fun addFiles(uris: List<Uri>, context: Context) {
         val current = _uiState.value.selectedFiles.toMutableList()
         for (uri in uris) {
-            if (current.size >= MAX_FILES) break
             val filename = getFileName(uri, context) ?: "unknown"
             val size = getFileSize(uri, context)
             current.add(SelectedFile(uri, filename, size))
@@ -67,8 +67,8 @@ class UploadViewModel @Inject constructor(
     }
 
     fun upload(context: Context) {
-        val files = _uiState.value.selectedFiles
-        if (files.isEmpty()) return
+        val allFiles = _uiState.value.selectedFiles
+        if (allFiles.isEmpty()) return
 
         viewModelScope.launch {
             if (!prefs.isLoggedInNow()) {
@@ -84,33 +84,61 @@ class UploadViewModel @Inject constructor(
                     return@launch
                 }
 
-                val parts = files.map { file ->
-                    val contentResolver = context.contentResolver
-                    val inputStream = contentResolver.openInputStream(file.uri)
-                        ?: throw Exception("无法读取文件: ${file.filename}")
-                    val bytes = inputStream.use { it.readBytes() }
-                    val requestBody = bytes.toRequestBody("audio/*".toMediaTypeOrNull())
-                    MultipartBody.Part.createFormData("files", file.filename, requestBody)
+                // Split into batches of BATCH_SIZE
+                val batches = allFiles.chunked(BATCH_SIZE)
+                val allResults = mutableListOf<com.inkwise.music.data.network.model.UploadResult>()
+
+                for ((batchIdx, batch) in batches.withIndex()) {
+                    val batchNum = batchIdx + 1
+                    _uiState.value = _uiState.value.copy(
+                        uploadProgress = "第 ${batchNum}/${batches.size} 批 (${batch.size}个文件)"
+                    )
+
+                    val parts = batch.map { file ->
+                        val contentResolver = context.contentResolver
+                        val inputStream = contentResolver.openInputStream(file.uri)
+                            ?: throw Exception("无法读取文件: ${file.filename}")
+                        val bytes = inputStream.use { it.readBytes() }
+                        val requestBody = bytes.toRequestBody("audio/*".toMediaTypeOrNull())
+                        MultipartBody.Part.createFormData("files", file.filename, requestBody)
+                    }
+
+                    val response = api.uploadMusic(token, parts)
+                    if (response.isSuccessful) {
+                        response.body()?.let { body ->
+                            allResults.addAll(body.results)
+                        }
+                    } else {
+                        // Mark all files in this batch as failed
+                        batch.forEach { file ->
+                            allResults.add(
+                                com.inkwise.music.data.network.model.UploadResult(
+                                    filename = file.filename,
+                                    success = false,
+                                    music = null,
+                                    error = "第${batchNum}批请求失败"
+                                )
+                            )
+                        }
+                    }
                 }
 
-                val response = api.uploadMusic(token, parts)
-                if (response.isSuccessful) {
-                    _uiState.value = _uiState.value.copy(
-                        isUploading = false,
-                        uploadResponse = response.body(),
-                        selectedFiles = emptyList()
-                    )
-                } else {
-                    _uiState.value = _uiState.value.copy(
-                        isUploading = false,
-                        error = "上传失败: ${response.code()}"
-                    )
-                }
+                val combinedResponse = BatchUploadResponse(
+                    message = "批量上传完成",
+                    results = allResults
+                )
+                _uiState.value = _uiState.value.copy(
+                    isUploading = false,
+                    uploadResponse = combinedResponse,
+                    uploadProgress = "",
+                    selectedFiles = emptyList()
+                )
             } catch (e: Exception) {
                 Log.e(TAG, "上传失败: ${e.message}", e)
                 _uiState.value = _uiState.value.copy(
                     isUploading = false,
-                    error = "网络错误: ${e.message}"
+                    error = "网络错误: ${e.message}",
+                    uploadProgress = ""
                 )
             }
         }

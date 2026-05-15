@@ -104,12 +104,11 @@ fun UploadScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // File picker button
-        val canAddMore = uiState.selectedFiles.size < UploadViewModel.MAX_FILES
         OutlinedButton(
             onClick = {
                 filePickerLauncher.launch(arrayOf("audio/*"))
             },
-            enabled = canAddMore && !uiState.isUploading,
+            enabled = !uiState.isUploading,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(
@@ -119,8 +118,8 @@ fun UploadScreen(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                if (uiState.selectedFiles.isEmpty()) "选择音频文件（最多${UploadViewModel.MAX_FILES}个）"
-                else "继续添加（最多${UploadViewModel.MAX_FILES}个）"
+                if (uiState.selectedFiles.isEmpty()) "选择音频文件"
+                else "继续添加"
             )
         }
 
@@ -186,7 +185,15 @@ fun UploadScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        // Upload progress
+        if (uiState.isUploading && uiState.uploadProgress.isNotEmpty()) {
+            Text(
+                text = uiState.uploadProgress,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
 
         // Upload button
         Button(
@@ -201,7 +208,7 @@ fun UploadScreen(
                     strokeWidth = 2.dp
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("上传中...")
+                Text(if (uiState.uploadProgress.isNotEmpty()) uiState.uploadProgress else "上传中...")
             } else {
                 Text("上传 ${uiState.selectedFiles.size} 个文件")
             }

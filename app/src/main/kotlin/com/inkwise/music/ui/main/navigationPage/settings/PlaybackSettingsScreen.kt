@@ -11,7 +11,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -27,6 +29,11 @@ fun PlaybackSettingsScreen(
     val fadeEnabled by viewModel.fadeEnabled.collectAsState()
     val cacheEnabled by viewModel.cacheEnabled.collectAsState()
     val monoEnabled by viewModel.monoEnabled.collectAsState()
+    val cacheSize by viewModel.cacheSize.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshCacheSize()
+    }
 
     Column(
         modifier = Modifier
@@ -92,6 +99,22 @@ fun PlaybackSettingsScreen(
                 checked = cacheEnabled,
                 onCheckedChange = { viewModel.setCacheEnabled(it) }
             )
+        }
+
+        // 缓存占用 & 清除
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 0.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "缓存占用：$cacheSize",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = { viewModel.clearAllCaches() }) {
+                Text("清除缓存")
+            }
         }
 
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))

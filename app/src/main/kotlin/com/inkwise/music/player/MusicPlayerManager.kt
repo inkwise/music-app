@@ -5,6 +5,7 @@ import android.content.Intent
 import com.un4seen.bass.BASS
 import com.inkwise.music.audio.BeatDetector
 import com.inkwise.music.data.audio.AudioEffectManager
+import com.inkwise.music.data.cache.StreamCacheManager
 import com.inkwise.music.data.model.PlayMode
 import com.inkwise.music.data.model.PlaybackState
 import com.inkwise.music.data.model.SleepMode
@@ -43,6 +44,8 @@ object MusicPlayerManager {
         private set
     var audioEffectManager: AudioEffectManager? = null
         private set
+    var streamCacheManager: StreamCacheManager? = null
+        private set
 
     // 播放模式
     private var playMode: PlayMode = PlayMode.LIST
@@ -63,12 +66,15 @@ object MusicPlayerManager {
     // 待恢复的进度
     private var pendingSeekPosition: Long = -1L
 
-    fun init(context: Context, prefs: PreferencesManager? = null, effectManager: AudioEffectManager? = null) {
+    fun init(context: Context, prefs: PreferencesManager? = null, effectManager: AudioEffectManager? = null, streamCache: StreamCacheManager? = null) {
         if (!::appContext.isInitialized) {
             appContext = context.applicationContext
             if (prefs != null) appPrefs = prefs
             if (effectManager != null) {
                 audioEffectManager = effectManager
+            }
+            if (streamCache != null) {
+                streamCacheManager = streamCache
             }
             BassEngine.init(appContext)
             BassEngine.setOnEndCallback { onBassTrackEnded() }
@@ -109,6 +115,9 @@ object MusicPlayerManager {
         shufflePosition = 0
     }
 
+    // 当前正在播放的歌曲（用于后台缓存下载）
+    private var currentSongForCache: Song? = null
+
     private fun loadCurrentTrackIntoBass() {
         val queue = _playQueue.value
         val song = queue.getOrNull(_currentIndex.value) ?: return
@@ -119,10 +128,14 @@ object MusicPlayerManager {
 
         appPrefs?.monoEnabled?.let { BassEngine.setMonoDownmix(it) }
 
+        // 边听边存：优先使用本地缓存文件
+        val resolvedUri = resolveStreamUri(song)
+        currentSongForCache = if (resolvedUri == song.uri) song else null
+
         val floatEnabled = fx?.isFloatDecodeEnabled ?: false
         val tempoNeeded = true
         val flags = if (floatEnabled) BASS.BASS_SAMPLE_FLOAT else 0
-        val ok = BassEngine.load(song.uri, flags, useTempo = tempoNeeded)
+        val ok = BassEngine.load(resolvedUri, flags, useTempo = tempoNeeded)
         if (ok) {
             fx?.onChannelReady()
             if (pendingSeekPosition > 0) {
@@ -132,8 +145,28 @@ object MusicPlayerManager {
             if (isPlaying) {
                 BassEngine.play()
             }
+            triggerBackgroundCache()
         }
         updatePlaybackState()
+    }
+
+    /** 解析播放 URI：边听边存开启时优先使用本地缓存文件 */
+    private fun resolveStreamUri(song: Song): String {
+        if (!song.isLocal) {
+            val cachedFile = streamCacheManager?.getCachedFile(song)
+            if (cachedFile != null) return cachedFile.absolutePath
+        }
+        return song.uri
+    }
+
+    /** 触发后台缓存下载（播放网络歌曲时调用） */
+    private fun triggerBackgroundCache() {
+        val song = currentSongForCache ?: return
+        val cache = streamCacheManager ?: return
+        if (!cache.shouldBackgroundCache(song)) return
+        scope.launch {
+            cache.downloadToCache(song)
+        }
     }
 
     /** Toggle mono downmix globally + apply to active channel for seamless switch. */
@@ -155,6 +188,7 @@ object MusicPlayerManager {
         isPlaying = true
         startProgressUpdates()
         BeatDetector.start()
+        triggerBackgroundCache()
         updatePlaybackState()
     }
 

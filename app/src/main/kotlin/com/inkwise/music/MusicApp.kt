@@ -37,7 +37,7 @@ class MusicApp : Application() {
         // 设置全局 Coil ImageLoader，自动为图片请求添加 Bearer token
         coil.Coil.setImageLoader(entryPoint.imageLoader)
 
-        MusicPlayerManager.init(this, entryPoint.prefsManager, entryPoint.audioEffectManager)
+        MusicPlayerManager.init(this, entryPoint.prefsManager, entryPoint.audioEffectManager, entryPoint.streamCacheManager)
         restoreSavedPlaybackState()
         entryPoint.fingerprintManager.startBackgroundScan()
         CrashHandler.instance.registerGlobal(this)

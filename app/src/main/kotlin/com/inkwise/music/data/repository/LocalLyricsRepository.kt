@@ -1,6 +1,7 @@
 package com.inkwise.music.data.repository
 
 import android.content.Context
+import com.inkwise.music.data.cache.LyricsCacheManager
 import com.inkwise.music.data.model.LyricLine
 import com.inkwise.music.data.model.LyricToken
 import com.inkwise.music.data.model.Lyrics
@@ -22,6 +23,7 @@ class LocalLyricsRepository
     constructor(
         private val musicRepository: MusicRepository,
         @ApplicationContext private val context: Context,
+        private val lyricsCacheManager: LyricsCacheManager,
     ) : LyricsRepository {
         private val cache = mutableMapOf<Long, Lyrics>()
 
@@ -29,27 +31,35 @@ class LocalLyricsRepository
         private val timeTagRegex = Regex("""\[(\d{2}):(\d{2})\.(\d{2,3})]""")
 
         override suspend fun loadLyrics(songId: Long): Lyrics? {
+            // 1) 内存缓存
             cache[songId]?.let { return it }
+
+            // 2) 磁盘缓存（上次网络加载成功后写入的）
+            lyricsCacheManager.get(songId)?.let {
+                cache[songId] = it
+                return it
+            }
 
             val song = musicRepository.getSongById(songId) ?: return null
 
-            // 1) 内嵌歌词
+            // 3) 内嵌歌词
             loadEmbeddedLyrics(song)?.let {
                 cache[songId] = it
                 return it
             }
 
-            // 2) 同目录 .lrc 文件
+            // 4) 同目录 .lrc 文件
             loadLrcFromDisk(song)?.let {
                 cache[songId] = it
                 return it
             }
 
-            // 3) 网络歌词
+            // 5) 网络歌词
             val lyricsUrl = song.lyricsUrl
             if (!lyricsUrl.isNullOrBlank()) {
                 loadNetworkLyrics(lyricsUrl, songId)?.let {
                     cache[songId] = it
+                    lyricsCacheManager.put(songId, it)
                     return it
                 }
             }

@@ -190,7 +190,8 @@ fun ArtistDetailScreen(
             onAddToPlaylist = {},
             onRemoveFromPlaylist = {},
             onArtistClick = { mainViewModel.navigateToArtist(it) },
-            onAlbumClick = { mainViewModel.navigateToAlbum(it) }
+            onAlbumClick = { mainViewModel.navigateToAlbum(it) },
+            onArtistNameClick = { mainViewModel.navigateToArtistByName(it) }
         )
     }
 

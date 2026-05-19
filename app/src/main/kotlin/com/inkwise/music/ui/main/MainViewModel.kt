@@ -35,36 +35,28 @@ class MainViewModel
         val navigateToAudioEffectEvents: SharedFlow<Unit> = _navigateToAudioEffectEvents
 
         fun navigateToAudioEffect() {
-            viewModelScope.launch {
-                _navigateToAudioEffectEvents.emit(Unit)
-            }
+            _navigateToAudioEffectEvents.tryEmit(Unit)
         }
 
         private val _navigateToArtistEvents = MutableSharedFlow<Long>()
         val navigateToArtistEvents: SharedFlow<Long> = _navigateToArtistEvents
 
         fun navigateToArtist(artistId: Long) {
-            viewModelScope.launch {
-                _navigateToArtistEvents.emit(artistId)
-            }
+            _navigateToArtistEvents.tryEmit(artistId)
         }
 
         private val _navigateToArtistByNameEvents = MutableSharedFlow<String>()
         val navigateToArtistByNameEvents: SharedFlow<String> = _navigateToArtistByNameEvents
 
         fun navigateToArtistByName(name: String) {
-            viewModelScope.launch {
-                _navigateToArtistByNameEvents.emit(name)
-            }
+            _navigateToArtistByNameEvents.tryEmit(name)
         }
 
         private val _navigateToAlbumEvents = MutableSharedFlow<String>()
         val navigateToAlbumEvents: SharedFlow<String> = _navigateToAlbumEvents
 
         fun navigateToAlbum(albumName: String) {
-            viewModelScope.launch {
-                _navigateToAlbumEvents.emit(albumName)
-            }
+            _navigateToAlbumEvents.tryEmit(albumName)
         }
 
         private val _uiState = MutableStateFlow(MainUiState())

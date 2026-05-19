@@ -289,7 +289,8 @@ fun PlaylistDetailScreen(
                 Toast.makeText(context, "已从歌单中移除", Toast.LENGTH_SHORT).show()
             },
             onArtistClick = { mainViewModel.navigateToArtist(it) },
-            onAlbumClick = { mainViewModel.navigateToAlbum(it) }
+            onAlbumClick = { mainViewModel.navigateToAlbum(it) },
+            onArtistNameClick = { mainViewModel.navigateToArtistByName(it) }
         )
     }
 

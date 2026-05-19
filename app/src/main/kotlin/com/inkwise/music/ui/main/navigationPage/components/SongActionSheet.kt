@@ -60,6 +60,7 @@ fun SongActionSheet(
     onRemoveFromPlaylist: () -> Unit,
     onArtistClick: (Long) -> Unit = {},
     onAlbumClick: (String) -> Unit = {},
+    onArtistNameClick: ((String) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
@@ -164,13 +165,19 @@ fun SongActionSheet(
                 if (song.artistIds.isNotEmpty()) {
                     ActionRow(
                         icon = Icons.Default.Person,
-                        text = "查看歌手",
+                        text = "歌手: ${song.artist}",
                         onClick = {
                             onArtistClick(song.artistIds.first())
-                            scope.launch {
-                                sheetState.hide()
-                                onDismiss()
-                            }
+                            scope.launch { sheetState.hide(); onDismiss() }
+                        }
+                    )
+                } else if (song.artist.isNotBlank() && onArtistNameClick != null) {
+                    ActionRow(
+                        icon = Icons.Default.Person,
+                        text = "歌手: ${song.artist}",
+                        onClick = {
+                            onArtistNameClick(song.artist)
+                            scope.launch { sheetState.hide(); onDismiss() }
                         }
                     )
                 }
@@ -179,13 +186,10 @@ fun SongActionSheet(
                 if (song.album.isNotBlank()) {
                     ActionRow(
                         icon = Icons.Default.Album,
-                        text = "查看专辑",
+                        text = "专辑: ${song.album}",
                         onClick = {
                             onAlbumClick(song.album)
-                            scope.launch {
-                                sheetState.hide()
-                                onDismiss()
-                            }
+                            scope.launch { sheetState.hide(); onDismiss() }
                         }
                     )
                 }

@@ -8,8 +8,9 @@ class Converters {
         value?.joinToString(",") { it.toString() }
 
     @TypeConverter
-    fun toLongList(value: String?): List<Long>? =
+    fun toLongList(value: String?): List<Long> =
         value?.takeIf { it.isNotBlank() }
             ?.split(",")
             ?.mapNotNull { it.toLongOrNull() }
+            ?: emptyList()
 }

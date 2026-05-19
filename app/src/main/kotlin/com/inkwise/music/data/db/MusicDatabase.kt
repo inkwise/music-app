@@ -124,8 +124,8 @@ abstract class MusicDatabase : RoomDatabase() {
                     )
                 """)
                 db.execSQL("""
-                    INSERT INTO songs_new (id, local_id, cloud_id, title, artist, album, duration, codec, sampleRate, bitDepth, channels, bitrate, uri, path, album_art, lyrics_url, is_local)
-                    SELECT id, local_id, cloud_id, title, artist, album, duration, codec, sampleRate, bitDepth, channels, bitrate, uri, path, album_art, lyrics_url, is_local FROM songs
+                    INSERT INTO songs_new (id, local_id, cloud_id, title, artist, artist_ids, album, duration, codec, sampleRate, bitDepth, channels, bitrate, uri, path, album_art, lyrics_url, is_local)
+                    SELECT id, local_id, cloud_id, title, artist, CAST(artist_id AS TEXT), album, duration, codec, sampleRate, bitDepth, channels, bitrate, uri, path, album_art, lyrics_url, is_local FROM songs
                 """)
                 db.execSQL("DROP TABLE songs")
                 db.execSQL("ALTER TABLE songs_new RENAME TO songs")

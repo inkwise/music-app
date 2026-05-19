@@ -10,10 +10,12 @@ import com.inkwise.music.data.dao.SongDao
 import com.inkwise.music.data.model.DownloadMatchEntity
 import com.inkwise.music.data.model.FingerprintEntity
 import com.inkwise.music.data.model.Song
+import com.inkwise.music.data.network.ApiResult
 import com.inkwise.music.data.network.ApiService
 import com.inkwise.music.data.network.model.FingerprintCheckRequest
 import com.inkwise.music.data.network.model.FingerprintQuery
 import com.inkwise.music.data.network.model.ReorderMusicRequest
+import com.inkwise.music.data.network.safeApiCall
 import com.inkwise.music.data.prefs.PreferencesManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -92,33 +94,33 @@ class CloudViewModel @Inject constructor(
                 return@launch
             }
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                val token = prefs.authToken.first()
-                val serverUrl = prefs.serverUrl.first()
+            val token = prefs.authToken.first()
+            val serverUrl = prefs.serverUrl.first()
 
-                // 1. 先加载持久化的匹配记录，立即显示已下载标记
-                val persistedMatches = downloadMatchDao.getValidMatchedCloudIds()
-                _uiState.value = _uiState.value.copy(downloadedSongIds = persistedMatches.toSet())
+            // 1. 先加载持久化的匹配记录，立即显示已下载标记
+            val persistedMatches = downloadMatchDao.getValidMatchedCloudIds()
+            _uiState.value = _uiState.value.copy(downloadedSongIds = persistedMatches.toSet())
 
-                // 2. 拉取并保存云端歌曲
-                val songs = fetchAndSaveSongs(token, serverUrl)
-                _uiState.value = _uiState.value.copy(
-                    songs = songs,
-                    isLoading = false,
-                    error = null
-                )
-
-                // 3. 元数据本地匹配（无网络也能工作）
-                checkLocalMetadataMatches()
-
-                // 4. 指纹匹配（更精确）
-                checkFingerprintMatches(token)
-            } catch (e: Exception) {
-                Log.e(TAG, "加载歌曲失败: ${e.message}", e)
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "网络错误: ${e.message}"
-                )
+            // 2. 拉取并保存云端歌曲
+            val result = fetchAndSaveSongs(token, serverUrl)
+            when (result) {
+                is ApiResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        songs = result.data,
+                        isLoading = false,
+                        error = null
+                    )
+                    // 3. 元数据本地匹配（无网络也能工作）
+                    checkLocalMetadataMatches()
+                    // 4. 指纹匹配（更精确）
+                    checkFingerprintMatches(token)
+                }
+                is ApiResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = result.message
+                    )
+                }
             }
         }
     }
@@ -130,22 +132,22 @@ class CloudViewModel @Inject constructor(
                 return@launch
             }
             _uiState.value = _uiState.value.copy(isRefreshing = true, error = null)
-            try {
-                val token = prefs.authToken.first()
-                val serverUrl = prefs.serverUrl.first()
-                val songs = fetchAndSaveSongs(token, serverUrl)
-                _uiState.value = _uiState.value.copy(
-                    songs = songs,
-                    isRefreshing = false,
-                    error = null
-                )
-                checkLocalMetadataMatches()
-                checkFingerprintMatches(token)
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isRefreshing = false,
-                    error = "网络错误: ${e.message}"
-                )
+            val token = prefs.authToken.first()
+            val serverUrl = prefs.serverUrl.first()
+            val result = fetchAndSaveSongs(token, serverUrl)
+            when (result) {
+                is ApiResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        songs = result.data, isRefreshing = false, error = null
+                    )
+                    checkLocalMetadataMatches()
+                    checkFingerprintMatches(token)
+                }
+                is ApiResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isRefreshing = false, error = result.message
+                    )
+                }
             }
         }
     }
@@ -330,75 +332,58 @@ class CloudViewModel @Inject constructor(
         }
     }
 
-    private suspend fun fetchAndSaveSongs(token: String?, serverUrl: String): List<Song> {
+    private suspend fun fetchAndSaveSongs(token: String?, serverUrl: String): ApiResult<List<Song>> {
         val sortBy = _uiState.value.sortBy
         val sortOrder = if (_uiState.value.sortOrderAsc) "asc" else "desc"
         val sortField = sortBy.apiField
 
-        val response = api.getMusicList(
-            token = "Bearer ${token ?: ""}",
-            page = 1,
-            pageSize = 200,
-            sortBy = sortField,
-            sortOrder = sortOrder
-        )
-
-        if (response.isSuccessful && response.body() != null) {
-            val items = response.body()!!.data
-
-            var songs = items.map { item ->
-                val song = mapToSong(item, serverUrl)
-                val savedSong = if (song.cloudId != null) {
-                    val existing = songDao.getSongByCloudId(song.cloudId!!)
-                    if (existing != null) {
-                        val updated = existing.copy(
-                            title = song.title,
-                            artist = song.artist,
-                            album = song.album,
-                            duration = song.duration,
-                            codec = song.codec,
-                            sampleRate = song.sampleRate,
-                            channels = song.channels,
-                            bitrate = song.bitrate,
-                            uri = song.uri,
-                            path = song.path,
-                            albumArt = song.albumArt,
-                            lyricsUrl = song.lyricsUrl,
-                        )
-                        songDao.insertSong(updated)
-                        updated
+        return when (val musicResult = safeApiCall {
+            api.getMusicList(
+                token = "Bearer ${token ?: ""}",
+                page = 1, pageSize = 200, sortBy = sortField, sortOrder = sortOrder
+            )
+        }) {
+            is ApiResult.Error -> musicResult
+            is ApiResult.Success -> {
+                val items = musicResult.data.data
+                var songs = items.map { item ->
+                    val song = mapToSong(item, serverUrl)
+                    if (song.cloudId != null) {
+                        val existing = songDao.getSongByCloudId(song.cloudId!!)
+                        if (existing != null) {
+                            val updated = existing.copy(
+                                title = song.title, artist = song.artist, album = song.album,
+                                duration = song.duration, codec = song.codec,
+                                sampleRate = song.sampleRate, channels = song.channels,
+                                bitrate = song.bitrate, uri = song.uri, path = song.path,
+                                albumArt = song.albumArt, lyricsUrl = song.lyricsUrl,
+                            )
+                            songDao.insertSong(updated)
+                            updated
+                        } else {
+                            song.copy(id = songDao.insertSong(song))
+                        }
                     } else {
-                        val newId = songDao.insertSong(song)
-                        song.copy(id = newId)
+                        song.copy(id = songDao.insertSong(song))
                     }
-                } else {
-                    val newId = songDao.insertSong(song)
-                    song.copy(id = newId)
                 }
-                savedSong
-            }
 
-            // 自定义排序模式：优先按本地保存的顺序排列
-            if (sortBy == CloudSortBy.CUSTOM) {
-                val localOrder = prefs.getCloudSongOrder()
-                if (localOrder.isNotEmpty()) {
-                    val songByCloudId = songs.associateBy { it.cloudId }
-                    // 按本地顺序取出已保存的歌曲，再追加未保存的新歌曲
-                    val ordered = localOrder.mapNotNull { songByCloudId[it] }
-                    val unordered = songs.filter { it.cloudId !in localOrder.toSet() }
-                    songs = ordered + unordered
+                if (sortBy == CloudSortBy.CUSTOM) {
+                    val localOrder = prefs.getCloudSongOrder()
+                    if (localOrder.isNotEmpty()) {
+                        val songByCloudId = songs.associateBy { it.cloudId }
+                        songs = localOrder.mapNotNull { songByCloudId[it] } +
+                            songs.filter { it.cloudId !in localOrder.toSet() }
+                    }
                 }
-            }
 
-            // 标题排序：按拼音首字母
-            if (sortBy == CloudSortBy.TITLE) {
-                val collator = java.text.Collator.getInstance(java.util.Locale.CHINESE)
-                songs = songs.sortedWith(java.util.Comparator { a, b -> collator.compare(a.title, b.title) })
-            }
+                if (sortBy == CloudSortBy.TITLE) {
+                    val collator = java.text.Collator.getInstance(java.util.Locale.CHINESE)
+                    songs = songs.sortedWith(java.util.Comparator { a, b -> collator.compare(a.title, b.title) })
+                }
 
-            return songs
-        } else {
-            throw Exception("加载失败: ${response.code()}")
+                ApiResult.Success(songs)
+            }
         }
     }
 

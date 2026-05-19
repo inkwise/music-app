@@ -52,6 +52,7 @@ import com.inkwise.music.ui.main.navigationPage.cloud.CloudSongsScreen
 import com.inkwise.music.ui.main.navigationPage.home.HomeScreen
 import com.inkwise.music.ui.main.navigationPage.home.PlaylistDetailScreen
 import com.inkwise.music.ui.main.navigationPage.local.LocalSongsScreen
+import com.inkwise.music.ui.main.navigationPage.search.SearchScreen
 import com.inkwise.music.ui.main.navigationPage.settings.SettingsScreen
 import com.inkwise.music.ui.theme.LocalAppDimens
 import kotlinx.coroutines.CoroutineScope
@@ -144,6 +145,7 @@ fun NavigationContent(
                     route == "login" -> "登录"
                     route == "register" -> "注册"
                     route == "profile" -> "用户资料"
+                    route == "search" -> "搜索"
                     route.startsWith("playlist/") -> "" // 歌单详情有自己的标题
                     else -> ""
                 }
@@ -163,7 +165,11 @@ fun NavigationContent(
                         }
                     },
                     actions = {
-                        IconButton(onClick = { viewModel.toggleBottomDrawer() }) {
+                        IconButton(onClick = {
+                            navController.navigate("search") {
+                                launchSingleTop = true
+                            }
+                        }) {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_search),
                                 contentDescription = "搜索",
@@ -195,6 +201,15 @@ fun NavigationContent(
                     startDestination = "home",
                     modifier = Modifier.padding(bottom = peekHeight),
                 ) {
+                    composable("search") {
+                        SearchScreen(
+                            onNavigateToCloud = {
+                                navController.navigate("cloud") {
+                                    launchSingleTop = true
+                                }
+                            }
+                        )
+                    }
                     composable("home") {
                         HomeScreen(
                             onNavigateToLocal = { navController.navigate("local") },

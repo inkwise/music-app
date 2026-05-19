@@ -20,6 +20,7 @@ import com.inkwise.music.data.network.model.ProfileResponse
 import com.inkwise.music.data.network.model.RegisterRequest
 import com.inkwise.music.data.network.model.ReorderMusicRequest
 import com.inkwise.music.data.network.model.ReorderMusicResponse
+import com.inkwise.music.data.network.model.SearchSuggestionsResponse
 import com.inkwise.music.data.network.model.ReorderPlaylistRequest
 import com.inkwise.music.data.network.model.ReorderPlaylistResponse
 import okhttp3.MultipartBody
@@ -123,6 +124,12 @@ interface ApiService {
         @Path("id") playlistId: Long,
         @Body request: ReorderPlaylistRequest
     ): Response<ReorderPlaylistResponse>
+
+    @GET("/music/search/suggestions")
+    suspend fun searchSuggestions(
+        @Header("Authorization") token: String,
+        @Query("keyword") keyword: String
+    ): Response<SearchSuggestionsResponse>
 
     @POST("/music/fingerprint/check")
     suspend fun fingerprintCheck(

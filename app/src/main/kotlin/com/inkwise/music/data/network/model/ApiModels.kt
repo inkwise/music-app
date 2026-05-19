@@ -154,6 +154,13 @@ data class ReorderMusicResponse(
     val message: String
 )
 
+// 搜索建议
+data class SearchSuggestionsResponse(
+    val titles: List<String>,
+    val artists: List<String>,
+    val albums: List<String>
+)
+
 // 批量上传
 data class BatchUploadResponse(
     val message: String,

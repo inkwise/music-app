@@ -4,9 +4,11 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.inkwise.music.data.network.ApiResult
 import com.inkwise.music.data.network.ApiService
 import com.inkwise.music.data.network.model.LoginRequest
 import com.inkwise.music.data.network.model.RegisterRequest
+import com.inkwise.music.data.network.safeApiCall
 import com.inkwise.music.data.prefs.PreferencesManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -109,38 +111,23 @@ class AuthViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            try {
-                val response = api.login(LoginRequest(state.username, state.password))
-                if (response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
+            val result = safeApiCall { api.login(LoginRequest(state.username, state.password)) }
+            when (result) {
+                is ApiResult.Success -> {
+                    val body = result.data
                     prefs.saveAuthData(body.token, body.user.username, body.user.email, body.user.id)
                     prefs.saveRememberedCredentials(state.username, state.password, state.rememberPassword)
                     _uiState.value = _uiState.value.copy(
-                        isLoggedIn = true,
-                        displayName = body.user.username,
-                        isLoading = false,
-                        message = "登录成功",
-                        isError = false
+                        isLoggedIn = true, displayName = body.user.username,
+                        isLoading = false, message = "登录成功", isError = false
                     )
                     onSuccess()
-                } else {
-                    val errorMsg = try {
-                        response.errorBody()?.string() ?: "登录失败"
-                    } catch (_: Exception) {
-                        "登录失败，状态码: ${response.code()}"
-                    }
+                }
+                is ApiResult.Error -> {
                     _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        message = errorMsg,
-                        isError = true
+                        isLoading = false, message = result.message, isError = true
                     )
                 }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    message = "网络错误: ${e.message}",
-                    isError = true
-                )
             }
         }
     }
@@ -158,38 +145,23 @@ class AuthViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            try {
-                val email = state.email.takeIf { it.isNotBlank() }
-                val response = api.register(RegisterRequest(state.username, state.password, email))
-                if (response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
+            val email = state.email.takeIf { it.isNotBlank() }
+            val result = safeApiCall { api.register(RegisterRequest(state.username, state.password, email)) }
+            when (result) {
+                is ApiResult.Success -> {
+                    val body = result.data
                     prefs.saveAuthData(body.token, body.user.username, body.user.email, body.user.id)
                     _uiState.value = _uiState.value.copy(
-                        isLoggedIn = true,
-                        displayName = body.user.username,
-                        isLoading = false,
-                        message = "注册成功",
-                        isError = false
+                        isLoggedIn = true, displayName = body.user.username,
+                        isLoading = false, message = "注册成功", isError = false
                     )
                     onSuccess()
-                } else {
-                    val errorMsg = try {
-                        response.errorBody()?.string() ?: "注册失败"
-                    } catch (_: Exception) {
-                        "注册失败，状态码: ${response.code()}"
-                    }
+                }
+                is ApiResult.Error -> {
                     _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        message = errorMsg,
-                        isError = true
+                        isLoading = false, message = result.message, isError = true
                     )
                 }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    message = "网络错误: ${e.message}",
-                    isError = true
-                )
             }
         }
     }
@@ -198,9 +170,13 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isUploadingAvatar = true)
             try {
-                val token = prefs.authToken.first() ?: throw Exception("未登录")
+                val token = prefs.authToken.first() ?: run {
+                    _uiState.value = _uiState.value.copy(
+                        isUploadingAvatar = false, message = "未登录", isError = true
+                    )
+                    return@launch
+                }
 
-                // 从 MIME 类型推导扩展名
                 val mimeType = app.contentResolver.getType(uri) ?: "image/jpeg"
                 val ext = when {
                     mimeType.contains("png") -> ".png"
@@ -211,36 +187,35 @@ class AuthViewModel @Inject constructor(
                 val tempFile = File(app.cacheDir, "avatar_upload_${System.currentTimeMillis()}$ext")
 
                 app.contentResolver.openInputStream(uri)?.use { input ->
-                    tempFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                } ?: throw Exception("无法读取图片文件")
+                    tempFile.outputStream().use { output -> input.copyTo(output) }
+                } ?: run {
+                    _uiState.value = _uiState.value.copy(
+                        isUploadingAvatar = false, message = "无法读取图片文件", isError = true
+                    )
+                    return@launch
+                }
 
                 val requestBody = tempFile.asRequestBody(mimeType.toMediaTypeOrNull())
                 val part = MultipartBody.Part.createFormData("avatar", tempFile.name, requestBody)
-                val response = api.uploadAvatar("Bearer $token", part)
-
-                if (response.isSuccessful) {
-                    _uiState.value = _uiState.value.copy(
-                        isUploadingAvatar = false,
-                        message = "头像上传成功",
-                        isError = false
-                    )
-                    prefs.bumpAvatarVersion()
-                    loadProfile()
-                } else {
-                    _uiState.value = _uiState.value.copy(
-                        isUploadingAvatar = false,
-                        message = "头像上传失败",
-                        isError = true
-                    )
+                val result = safeApiCall { api.uploadAvatar("Bearer $token", part) }
+                when (result) {
+                    is ApiResult.Success -> {
+                        _uiState.value = _uiState.value.copy(
+                            isUploadingAvatar = false, message = "头像上传成功", isError = false
+                        )
+                        prefs.bumpAvatarVersion()
+                        loadProfile()
+                    }
+                    is ApiResult.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isUploadingAvatar = false, message = result.message, isError = true
+                        )
+                    }
                 }
                 tempFile.delete()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
-                    isUploadingAvatar = false,
-                    message = "上传失败: ${e.message}",
-                    isError = true
+                    isUploadingAvatar = false, message = "上传失败: ${e.message}", isError = true
                 )
             }
         }

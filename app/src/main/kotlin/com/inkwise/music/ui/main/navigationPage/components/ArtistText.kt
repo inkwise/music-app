@@ -3,24 +3,19 @@ package com.inkwise.music.ui.main.navigationPage.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.text.InlineTextContent
-import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.Placeholder
-import androidx.compose.ui.text.PlaceholderVerticalAlign
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.sp
 
 @Composable
 fun ArtistText(
     artist: String,
     artistIds: List<Long>,
     onArtistClick: (Long) -> Unit,
+    onArtistNameClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
     style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -33,7 +28,11 @@ fun ArtistText(
             color = color,
             maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
-            modifier = modifier
+            modifier = if (onArtistNameClick != null) {
+                modifier.clickable { onArtistNameClick(artist) }
+            } else {
+                modifier
+            }
         )
         return
     }

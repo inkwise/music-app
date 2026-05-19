@@ -175,6 +175,10 @@ class CloudViewModel @Inject constructor(
                             localSongId = local.id
                         ))
                         matchedCloudIds.add(cloud.cloudId)
+                        // 将云端 artistIds 同步到本地歌曲
+                        if (local.artistIds.isEmpty() && cloud.artistIds.isNotEmpty()) {
+                            songDao.updateSong(local.copy(artistIds = cloud.artistIds))
+                        }
                         Log.d(TAG, "元数据匹配: cloud=${cloud.title} → local=${local.title}")
                         break
                     }
@@ -301,6 +305,15 @@ class CloudViewModel @Inject constructor(
                         localSongId = localFingerprint.songId
                     ))
                     currentMatchedCloudIds.add(cloudMusicId)
+
+                    // 将云端 artistIds 同步到本地歌曲
+                    val localSong = songDao.getSongById(localFingerprint.songId)
+                    if (localSong != null && localSong.artistIds.isEmpty()) {
+                        val cloudSong = _uiState.value.songs.find { it.cloudId == cloudMusicId }
+                        if (cloudSong != null && cloudSong.artistIds.isNotEmpty()) {
+                            songDao.updateSong(localSong.copy(artistIds = cloudSong.artistIds))
+                        }
+                    }
 
                     // 将服务端返回的指纹缓存到本地歌曲
                     if (!result.music.fingerprint.isNullOrBlank()) {

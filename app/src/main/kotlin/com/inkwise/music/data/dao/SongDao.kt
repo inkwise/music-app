@@ -35,4 +35,19 @@ interface SongDao {
 
     @Query("SELECT * FROM songs WHERE path = :path LIMIT 1")
     suspend fun getSongByPath(path: String): Song?
+
+    @Query("SELECT * FROM songs WHERE is_local = 1 AND artist LIKE '%' || :name || '%' ORDER BY title ASC")
+    fun getLocalSongsByArtistName(name: String): Flow<List<Song>>
+
+    @Query("SELECT * FROM songs WHERE is_local = 0 AND artist LIKE '%' || :name || '%' ORDER BY title ASC")
+    fun getCloudSongsByArtistName(name: String): Flow<List<Song>>
+
+    @Query("SELECT * FROM songs WHERE album = :albumName ORDER BY title ASC")
+    fun getSongsByAlbum(albumName: String): Flow<List<Song>>
+
+    @Query("SELECT * FROM songs WHERE is_local = 1 AND album = :albumName ORDER BY title ASC")
+    fun getLocalSongsByAlbum(albumName: String): Flow<List<Song>>
+
+    @Update
+    suspend fun updateSong(song: Song)
 }

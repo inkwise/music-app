@@ -1,10 +1,12 @@
 package com.inkwise.music.ui.main
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,6 +51,7 @@ import com.inkwise.music.ui.main.navigationPage.auth.LoginScreen
 import com.inkwise.music.ui.main.navigationPage.auth.RegisterScreen
 import com.inkwise.music.ui.main.navigationPage.auth.UserProfileScreen
 import com.inkwise.music.ui.main.navigationPage.cloud.CloudSongsScreen
+import com.inkwise.music.ui.main.navigationPage.home.AlbumDetailScreen
 import com.inkwise.music.ui.main.navigationPage.home.ArtistDetailScreen
 import com.inkwise.music.ui.main.navigationPage.home.HomeScreen
 import com.inkwise.music.ui.main.navigationPage.home.PlaylistDetailScreen
@@ -94,6 +97,22 @@ fun NavigationContent(
     LaunchedEffect(Unit) {
         viewModel.navigateToArtistEvents.collect { artistId ->
             navController.navigate("artist/$artistId")
+            pagerState.scrollToPage(0)
+            sheetState.partialExpand()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateToArtistByNameEvents.collect { name ->
+            navController.navigate("artist/by-name/${Uri.encode(name)}")
+            pagerState.scrollToPage(0)
+            sheetState.partialExpand()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateToAlbumEvents.collect { albumName ->
+            navController.navigate("album/${Uri.encode(albumName)}")
             pagerState.scrollToPage(0)
             sheetState.partialExpand()
         }
@@ -156,6 +175,7 @@ fun NavigationContent(
                     route == "profile" -> "用户资料"
                     route == "search" -> "搜索"
                     route.startsWith("artist/") -> "" // 艺术家详情有自己的标题
+                    route.startsWith("album/") -> "" // 专辑详情有自己的标题
                     route.startsWith("playlist/") -> "" // 歌单详情有自己的标题
                     else -> ""
                 }
@@ -220,6 +240,9 @@ fun NavigationContent(
                             },
                             onNavigateToArtist = { artistId ->
                                 navController.navigate("artist/$artistId")
+                            },
+                            onNavigateToAlbum = { albumName ->
+                                navController.navigate("album/${Uri.encode(albumName)}")
                             }
                         )
                     }
@@ -322,6 +345,22 @@ fun NavigationContent(
                         )
                     ) {
                         ArtistDetailScreen()
+                    }
+                    composable(
+                        route = "artist/by-name/{artistName}",
+                        arguments = listOf(
+                            navArgument("artistName") { type = NavType.StringType }
+                        )
+                    ) {
+                        ArtistDetailScreen()
+                    }
+                    composable(
+                        route = "album/{albumName}",
+                        arguments = listOf(
+                            navArgument("albumName") { type = NavType.StringType }
+                        )
+                    ) {
+                        AlbumDetailScreen()
                     }
                 }
 

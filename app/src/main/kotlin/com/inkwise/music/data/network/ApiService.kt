@@ -18,6 +18,8 @@ import com.inkwise.music.data.network.model.PlaylistResponse
 import com.inkwise.music.data.network.model.PlaylistSongsResponse
 import com.inkwise.music.data.network.model.ProfileResponse
 import com.inkwise.music.data.network.model.RegisterRequest
+import com.inkwise.music.data.network.model.AlbumDetailResponse
+import com.inkwise.music.data.network.model.AlbumListResponse
 import com.inkwise.music.data.network.model.ArtistDetailResponse
 import com.inkwise.music.data.network.model.ReorderMusicRequest
 import com.inkwise.music.data.network.model.ReorderMusicResponse
@@ -143,6 +145,27 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("id") artistId: Long
     ): Response<ArtistDetailResponse>
+
+    @GET("/artists/by-name/{name}")
+    suspend fun getArtistByName(
+        @Header("Authorization") token: String,
+        @Path("name") name: String
+    ): Response<ArtistDetailResponse>
+
+    @GET("/albums")
+    suspend fun getAlbums(
+        @Header("Authorization") token: String,
+        @Query("page") page: Int = 1,
+        @Query("page_size") pageSize: Int = 50
+    ): Response<AlbumListResponse>
+
+    @GET("/albums/{name}/music")
+    suspend fun getAlbumMusic(
+        @Header("Authorization") token: String,
+        @Path("name") albumName: String,
+        @Query("page") page: Int = 1,
+        @Query("page_size") pageSize: Int = 200
+    ): Response<AlbumDetailResponse>
 
     @Multipart
     @POST("/music/upload/batch")

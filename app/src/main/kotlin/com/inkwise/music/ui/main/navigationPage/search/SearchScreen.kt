@@ -44,6 +44,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun SearchScreen(
     onNavigateToCloud: () -> Unit = {},
     onNavigateToArtist: (Long) -> Unit = {},
+    onNavigateToAlbum: (String) -> Unit = {},
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -128,7 +129,7 @@ fun SearchScreen(
                 }
                 items(state.albums) { album ->
                     SearchItem(album, subtitle = null, icon = "◈") {
-                        onNavigateToCloud()
+                        onNavigateToAlbum(album)
                     }
                 }
                 item { Spacer(Modifier.height(32.dp)) }

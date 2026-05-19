@@ -49,6 +49,24 @@ class MainViewModel
             }
         }
 
+        private val _navigateToArtistByNameEvents = MutableSharedFlow<String>()
+        val navigateToArtistByNameEvents: SharedFlow<String> = _navigateToArtistByNameEvents
+
+        fun navigateToArtistByName(name: String) {
+            viewModelScope.launch {
+                _navigateToArtistByNameEvents.emit(name)
+            }
+        }
+
+        private val _navigateToAlbumEvents = MutableSharedFlow<String>()
+        val navigateToAlbumEvents: SharedFlow<String> = _navigateToAlbumEvents
+
+        fun navigateToAlbum(albumName: String) {
+            viewModelScope.launch {
+                _navigateToAlbumEvents.emit(albumName)
+            }
+        }
+
         private val _uiState = MutableStateFlow(MainUiState())
         val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 

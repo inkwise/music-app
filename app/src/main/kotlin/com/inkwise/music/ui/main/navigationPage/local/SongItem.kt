@@ -48,6 +48,7 @@ fun SongItem(
     addToQueue: () -> Unit,
     onMoreClick: () -> Unit = {},
     onArtistClick: (Long) -> Unit = {},
+    onArtistNameClick: ((String) -> Unit)? = null,
     multiSelectMode: Boolean = false,
     isSelected: Boolean = false,
     onToggleSelect: () -> Unit = {},
@@ -142,6 +143,7 @@ fun SongItem(
                         artist = song.artist,
                         artistIds = song.artistIds,
                         onArtistClick = onArtistClick,
+                        onArtistNameClick = onArtistNameClick,
                         style = MaterialTheme.typography.bodyMedium,
                         color =
                             if (isPlaying) {

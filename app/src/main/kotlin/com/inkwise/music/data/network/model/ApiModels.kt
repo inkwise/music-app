@@ -181,6 +181,26 @@ data class ArtistDetail(
     val updated_at: String?
 )
 
+// 专辑列表
+data class AlbumListResponse(
+    val data: List<AlbumItem>,
+    val pagination: Pagination
+)
+
+data class AlbumItem(
+    val name: String,
+    val cover_url: String?,
+    val track_count: Int
+)
+
+// 专辑详情
+data class AlbumDetailResponse(
+    val album: String,
+    val cover_url: String?,
+    val musics: List<MusicItem>,
+    val total: Int
+)
+
 // 批量上传
 data class BatchUploadResponse(
     val message: String,

@@ -43,6 +43,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 @Composable
 fun SearchScreen(
     onNavigateToCloud: () -> Unit = {},
+    onNavigateToArtist: (Long) -> Unit = {},
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -114,8 +115,8 @@ fun SearchScreen(
                     SectionHeader("歌手")
                 }
                 items(state.artists) { artist ->
-                    SearchItem(artist, subtitle = null, icon = "♫") {
-                        onNavigateToCloud()
+                    SearchItem(artist.name, subtitle = null, icon = "♫") {
+                        onNavigateToArtist(artist.id)
                     }
                 }
             }

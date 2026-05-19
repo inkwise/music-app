@@ -49,6 +49,7 @@ import com.inkwise.music.ui.main.navigationPage.auth.LoginScreen
 import com.inkwise.music.ui.main.navigationPage.auth.RegisterScreen
 import com.inkwise.music.ui.main.navigationPage.auth.UserProfileScreen
 import com.inkwise.music.ui.main.navigationPage.cloud.CloudSongsScreen
+import com.inkwise.music.ui.main.navigationPage.home.ArtistDetailScreen
 import com.inkwise.music.ui.main.navigationPage.home.HomeScreen
 import com.inkwise.music.ui.main.navigationPage.home.PlaylistDetailScreen
 import com.inkwise.music.ui.main.navigationPage.local.LocalSongsScreen
@@ -146,6 +147,7 @@ fun NavigationContent(
                     route == "register" -> "注册"
                     route == "profile" -> "用户资料"
                     route == "search" -> "搜索"
+                    route.startsWith("artist/") -> "" // 艺术家详情有自己的标题
                     route.startsWith("playlist/") -> "" // 歌单详情有自己的标题
                     else -> ""
                 }
@@ -207,6 +209,9 @@ fun NavigationContent(
                                 navController.navigate("cloud") {
                                     launchSingleTop = true
                                 }
+                            },
+                            onNavigateToArtist = { artistId ->
+                                navController.navigate("artist/$artistId")
                             }
                         )
                     }
@@ -301,6 +306,14 @@ fun NavigationContent(
                         )
                     ) {
                         PlaylistDetailScreen()
+                    }
+                    composable(
+                        route = "artist/{artistId}",
+                        arguments = listOf(
+                            navArgument("artistId") { type = NavType.LongType }
+                        )
+                    ) {
+                        ArtistDetailScreen()
                     }
                 }
 

@@ -66,6 +66,11 @@ data class ArtistInfo(
     val name: String
 )
 
+data class ArtistSuggestion(
+    val id: Long,
+    val name: String
+)
+
 data class Pagination(
     val page: Int,
     val page_size: Int,
@@ -157,8 +162,23 @@ data class ReorderMusicResponse(
 // 搜索建议
 data class SearchSuggestionsResponse(
     val titles: List<String>,
-    val artists: List<String>,
+    val artists: List<ArtistSuggestion>,
     val albums: List<String>
+)
+
+// 艺术家详情
+data class ArtistDetailResponse(
+    val artist: ArtistDetail
+)
+
+data class ArtistDetail(
+    val id: Long,
+    val name: String,
+    val description: String?,
+    val avatar_url: String?,
+    val musics: List<MusicItem>?,
+    val created_at: String?,
+    val updated_at: String?
 )
 
 // 批量上传

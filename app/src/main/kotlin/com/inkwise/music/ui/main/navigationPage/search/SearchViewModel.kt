@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.inkwise.music.data.network.ApiResult
 import com.inkwise.music.data.network.ApiService
+import com.inkwise.music.data.network.model.ArtistSuggestion
 import com.inkwise.music.data.network.safeApiCall
 import com.inkwise.music.data.prefs.PreferencesManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,7 +20,7 @@ import javax.inject.Inject
 data class SearchUiState(
     val keyword: String = "",
     val titles: List<String> = emptyList(),
-    val artists: List<String> = emptyList(),
+    val artists: List<ArtistSuggestion> = emptyList(),
     val albums: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,

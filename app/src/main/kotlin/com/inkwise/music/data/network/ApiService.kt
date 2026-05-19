@@ -18,6 +18,7 @@ import com.inkwise.music.data.network.model.PlaylistResponse
 import com.inkwise.music.data.network.model.PlaylistSongsResponse
 import com.inkwise.music.data.network.model.ProfileResponse
 import com.inkwise.music.data.network.model.RegisterRequest
+import com.inkwise.music.data.network.model.ArtistDetailResponse
 import com.inkwise.music.data.network.model.ReorderMusicRequest
 import com.inkwise.music.data.network.model.ReorderMusicResponse
 import com.inkwise.music.data.network.model.SearchSuggestionsResponse
@@ -136,6 +137,12 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Body request: FingerprintCheckRequest
     ): Response<FingerprintCheckResponse>
+
+    @GET("/artists/{id}")
+    suspend fun getArtistDetail(
+        @Header("Authorization") token: String,
+        @Path("id") artistId: Long
+    ): Response<ArtistDetailResponse>
 
     @Multipart
     @POST("/music/upload/batch")

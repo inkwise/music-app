@@ -101,7 +101,7 @@ fun ArtistDetailScreen(
                                         )
                                     } else {
                                         Icon(
-                                            painter = painterResource(id = R.drawable.ic_default_cover),
+                                            painter = painterResource(id = R.drawable.ic_song_cover),
                                             contentDescription = null,
                                             modifier = Modifier.size(200.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant

@@ -1,18 +1,17 @@
 package com.inkwise.music.ui.main
 
-import android.app.Application
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.inkwise.music.data.prefs.PreferencesManager
 import com.inkwise.music.data.repository.MusicRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -31,32 +30,32 @@ class MainViewModel
     ) : ViewModel() {
         val loginRequiredEvents: SharedFlow<Unit> = prefs.loginRequiredEvents
 
-        private val _navigateToAudioEffectEvents = MutableSharedFlow<Unit>()
-        val navigateToAudioEffectEvents: SharedFlow<Unit> = _navigateToAudioEffectEvents
+        private val _navigateToAudioEffectEvents = Channel<Unit>(Channel.BUFFERED)
+        val navigateToAudioEffectEvents = _navigateToAudioEffectEvents.receiveAsFlow()
 
         fun navigateToAudioEffect() {
-            _navigateToAudioEffectEvents.tryEmit(Unit)
+            _navigateToAudioEffectEvents.trySend(Unit)
         }
 
-        private val _navigateToArtistEvents = MutableSharedFlow<Long>()
-        val navigateToArtistEvents: SharedFlow<Long> = _navigateToArtistEvents
+        private val _navigateToArtistEvents = Channel<Long>(Channel.BUFFERED)
+        val navigateToArtistEvents = _navigateToArtistEvents.receiveAsFlow()
 
         fun navigateToArtist(artistId: Long) {
-            _navigateToArtistEvents.tryEmit(artistId)
+            _navigateToArtistEvents.trySend(artistId)
         }
 
-        private val _navigateToArtistByNameEvents = MutableSharedFlow<String>()
-        val navigateToArtistByNameEvents: SharedFlow<String> = _navigateToArtistByNameEvents
+        private val _navigateToArtistByNameEvents = Channel<String>(Channel.BUFFERED)
+        val navigateToArtistByNameEvents = _navigateToArtistByNameEvents.receiveAsFlow()
 
         fun navigateToArtistByName(name: String) {
-            _navigateToArtistByNameEvents.tryEmit(name)
+            _navigateToArtistByNameEvents.trySend(name)
         }
 
-        private val _navigateToAlbumEvents = MutableSharedFlow<String>()
-        val navigateToAlbumEvents: SharedFlow<String> = _navigateToAlbumEvents
+        private val _navigateToAlbumEvents = Channel<String>(Channel.BUFFERED)
+        val navigateToAlbumEvents = _navigateToAlbumEvents.receiveAsFlow()
 
         fun navigateToAlbum(albumName: String) {
-            _navigateToAlbumEvents.tryEmit(albumName)
+            _navigateToAlbumEvents.trySend(albumName)
         }
 
         private val _uiState = MutableStateFlow(MainUiState())

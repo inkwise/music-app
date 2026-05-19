@@ -52,6 +52,7 @@ import com.inkwise.music.ui.main.navigationPage.components.SongInfoDialog
 import com.inkwise.music.ui.main.navigationPage.components.SortBottomSheet
 import com.inkwise.music.ui.main.navigationPage.components.SortMode
 import com.inkwise.music.ui.main.navigationPage.components.rememberDragReorderState
+import com.inkwise.music.ui.main.MainViewModel
 import com.inkwise.music.ui.main.navigationPage.home.HomeViewModel
 import com.inkwise.music.ui.main.navigationPage.local.SongItem
 import com.inkwise.music.ui.main.navigationPage.local.formatTime
@@ -76,7 +77,8 @@ private fun SortMode.toCloudSortBy(): CloudSortBy = when (this) {
 fun CloudSongsScreen(
     playerViewModel: PlayerViewModel = hiltViewModel(),
     cloudViewModel: CloudViewModel = hiltViewModel(),
-    homeViewModel: HomeViewModel = hiltViewModel()
+    homeViewModel: HomeViewModel = hiltViewModel(),
+    mainViewModel: MainViewModel = hiltViewModel(),
 ) {
     val uiState by cloudViewModel.uiState.collectAsState()
     val playbackState by playerViewModel.playbackState.collectAsState()
@@ -268,6 +270,10 @@ fun CloudSongsScreen(
                                 },
                                 addToQueue = { playerViewModel.addToQueue(song) },
                                 onMoreClick = { actionSong = song },
+                                onArtistClick = { mainViewModel.navigateToArtist(it) },
+                                onArtistNameClick = if (song.artistIds.isEmpty()) {
+                                    { name: String -> mainViewModel.navigateToArtistByName(name) }
+                                } else null,
                                 multiSelectMode = multiSelectMode,
                                 isSelected = song.id in selectedIds,
                                 onToggleSelect = {
@@ -346,7 +352,8 @@ fun CloudSongsScreen(
             onDismiss = {
                 infoSong = null
                 infoFingerprint = null
-            }
+            },
+            onArtistClick = { mainViewModel.navigateToArtist(it) }
         )
     }
 
@@ -372,7 +379,9 @@ fun CloudSongsScreen(
                 homeViewModel.addSongToPlaylist(playlistId, song.id)
                 Toast.makeText(context, "已添加到歌单", Toast.LENGTH_SHORT).show()
             },
-            onRemoveFromPlaylist = {}
+            onRemoveFromPlaylist = {},
+            onArtistClick = { mainViewModel.navigateToArtist(it) },
+            onAlbumClick = { mainViewModel.navigateToAlbum(it) }
         )
     }
 }

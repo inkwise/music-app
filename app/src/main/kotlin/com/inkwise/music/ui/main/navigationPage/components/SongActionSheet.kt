@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.QueueMusic
@@ -57,6 +59,7 @@ fun SongActionSheet(
     onAddToPlaylist: (Long) -> Unit,
     onRemoveFromPlaylist: () -> Unit,
     onArtistClick: (Long) -> Unit = {},
+    onAlbumClick: (String) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
@@ -156,6 +159,36 @@ fun SongActionSheet(
                         }
                     }
                 )
+
+                // 查看歌手
+                if (song.artistIds.isNotEmpty()) {
+                    ActionRow(
+                        icon = Icons.Default.Person,
+                        text = "查看歌手",
+                        onClick = {
+                            onArtistClick(song.artistIds.first())
+                            scope.launch {
+                                sheetState.hide()
+                                onDismiss()
+                            }
+                        }
+                    )
+                }
+
+                // 查看专辑
+                if (song.album.isNotBlank()) {
+                    ActionRow(
+                        icon = Icons.Default.Album,
+                        text = "查看专辑",
+                        onClick = {
+                            onAlbumClick(song.album)
+                            scope.launch {
+                                sheetState.hide()
+                                onDismiss()
+                            }
+                        }
+                    )
+                }
 
                 // 歌曲信息
                 ActionRow(

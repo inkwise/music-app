@@ -61,6 +61,7 @@ import com.inkwise.music.ui.main.navigationPage.components.SongInfoDialog
 import com.inkwise.music.ui.main.navigationPage.components.SortBottomSheet
 import com.inkwise.music.ui.main.navigationPage.components.SortMode
 import com.inkwise.music.ui.main.navigationPage.components.rememberDragReorderState
+import com.inkwise.music.ui.main.MainViewModel
 import com.inkwise.music.ui.main.navigationPage.home.HomeViewModel
 import com.inkwise.music.ui.player.PlayerViewModel
 
@@ -76,7 +77,8 @@ private val mediaPermission =
 fun LocalSongsScreen(
     playerViewModel: PlayerViewModel = hiltViewModel(),
     localViewModel: LocalViewModel = hiltViewModel(),
-    homeViewModel: HomeViewModel = hiltViewModel()
+    homeViewModel: HomeViewModel = hiltViewModel(),
+    mainViewModel: MainViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     val playbackState by playerViewModel.playbackState.collectAsState()
@@ -261,6 +263,10 @@ fun LocalSongsScreen(
                                 },
                                 addToQueue = { playerViewModel.addToQueue(song) },
                                 onMoreClick = { actionSong = song },
+                                onArtistClick = { mainViewModel.navigateToArtist(it) },
+                                onArtistNameClick = if (song.artistIds.isEmpty()) {
+                                    { name: String -> mainViewModel.navigateToArtistByName(name) }
+                                } else null,
                                 multiSelectMode = multiSelectMode,
                                 isSelected = song.id in selectedIds,
                                 onToggleSelect = {
@@ -367,7 +373,8 @@ fun LocalSongsScreen(
             onDismiss = {
                 infoSong = null
                 infoFingerprint = null
-            }
+            },
+            onArtistClick = { mainViewModel.navigateToArtist(it) }
         )
     }
 
@@ -393,7 +400,9 @@ fun LocalSongsScreen(
                 homeViewModel.addSongToPlaylist(playlistId, song.id)
                 Toast.makeText(context, "已添加到歌单", Toast.LENGTH_SHORT).show()
             },
-            onRemoveFromPlaylist = {}
+            onRemoveFromPlaylist = {},
+            onArtistClick = { mainViewModel.navigateToArtist(it) },
+            onAlbumClick = { mainViewModel.navigateToAlbum(it) }
         )
     }
 }

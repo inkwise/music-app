@@ -37,7 +37,9 @@ import coil.compose.AsyncImage
 import com.inkwise.music.R
 import com.inkwise.music.data.model.PlaylistWithSongs
 import com.inkwise.music.data.model.Song
+import com.inkwise.music.ui.main.MainViewModel
 import com.inkwise.music.ui.main.navigationPage.components.SongActionSheet
+import com.inkwise.music.ui.main.navigationPage.components.SongInfoDialog
 import com.inkwise.music.ui.main.navigationPage.local.SongItem
 import com.inkwise.music.ui.player.PlayerViewModel
 
@@ -45,11 +47,13 @@ import com.inkwise.music.ui.player.PlayerViewModel
 @Composable
 fun ArtistDetailScreen(
     playerViewModel: PlayerViewModel = hiltViewModel(),
-    detailViewModel: ArtistDetailViewModel = hiltViewModel()
+    detailViewModel: ArtistDetailViewModel = hiltViewModel(),
+    mainViewModel: MainViewModel = hiltViewModel(),
 ) {
     val uiState by detailViewModel.uiState.collectAsState()
     val playbackState by playerViewModel.playbackState.collectAsState()
     var actionSong by remember { mutableStateOf<Song?>(null) }
+    var infoSong by remember { mutableStateOf<Song?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
@@ -181,10 +185,22 @@ fun ArtistDetailScreen(
             isInPlaylist = false,
             onDismiss = { actionSong = null },
             onPlayNext = { playerViewModel.addToQueue(song) },
-            onShowInfo = { /* show info dialog */ },
+            onShowInfo = { infoSong = song },
             onDelete = {},
-            onAddToPlaylist = { /* add to playlist */ },
-            onRemoveFromPlaylist = {}
+            onAddToPlaylist = {},
+            onRemoveFromPlaylist = {},
+            onArtistClick = { mainViewModel.navigateToArtist(it) },
+            onAlbumClick = { mainViewModel.navigateToAlbum(it) }
+        )
+    }
+
+    // Song info dialog
+    infoSong?.let { song ->
+        SongInfoDialog(
+            song = song,
+            fingerprint = null,
+            onDismiss = { infoSong = null },
+            onArtistClick = { mainViewModel.navigateToArtist(it) }
         )
     }
 }

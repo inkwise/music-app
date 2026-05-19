@@ -40,7 +40,9 @@ import com.inkwise.music.R
 import com.inkwise.music.data.model.Song
 import com.inkwise.music.ui.main.navigationPage.components.MultiSelectBottomBar
 import com.inkwise.music.ui.main.navigationPage.components.PlaylistPickerSheet
+import com.inkwise.music.ui.main.MainViewModel
 import com.inkwise.music.ui.main.navigationPage.components.SongActionSheet
+import com.inkwise.music.ui.main.navigationPage.components.SongInfoDialog
 import com.inkwise.music.ui.main.navigationPage.components.SortBottomSheet
 import com.inkwise.music.ui.main.navigationPage.components.SortMode
 import com.inkwise.music.ui.main.navigationPage.components.rememberDragReorderState
@@ -53,7 +55,8 @@ import com.inkwise.music.ui.player.PlayerViewModel
 fun PlaylistDetailScreen(
     playerViewModel: PlayerViewModel = hiltViewModel(),
     detailViewModel: PlaylistDetailViewModel = hiltViewModel(),
-    homeViewModel: HomeViewModel = hiltViewModel()
+    homeViewModel: HomeViewModel = hiltViewModel(),
+    mainViewModel: MainViewModel = hiltViewModel(),
 ) {
     val uiState by detailViewModel.uiState.collectAsState()
     val playbackState by playerViewModel.playbackState.collectAsState()
@@ -71,6 +74,7 @@ fun PlaylistDetailScreen(
     val context = LocalContext.current
 
     var actionSong by remember { mutableStateOf<Song?>(null) }
+    var infoSong by remember { mutableStateOf<Song?>(null) }
     var showSortSheet by remember { mutableStateOf(false) }
 
     // ── 多选状态 ──
@@ -191,6 +195,10 @@ fun PlaylistDetailScreen(
                         onClick = { playerViewModel.playSongs(uiState.songs, index) },
                         addToQueue = { playerViewModel.addToQueue(song) },
                         onMoreClick = { actionSong = song },
+                        onArtistClick = { mainViewModel.navigateToArtist(it) },
+                        onArtistNameClick = if (song.artistIds.isEmpty()) {
+                            { name: String -> mainViewModel.navigateToArtistByName(name) }
+                        } else null,
                         multiSelectMode = multiSelectMode,
                         isSelected = song.id in selectedIds,
                         onToggleSelect = {
@@ -266,11 +274,7 @@ fun PlaylistDetailScreen(
                 Toast.makeText(context, "已添加到下一首", Toast.LENGTH_SHORT).show()
             },
             onShowInfo = {
-                Toast.makeText(
-                    context,
-                    "${song.title} - ${song.artist}\n时长: ${formatTime(song.duration)}\n采样率: ${song.sampleRate}Hz\n比特率: ${song.bitrate}bps",
-                    Toast.LENGTH_LONG
-                ).show()
+                infoSong = song
             },
             onDelete = {
                 detailViewModel.deleteSong(song)
@@ -283,7 +287,19 @@ fun PlaylistDetailScreen(
             onRemoveFromPlaylist = {
                 detailViewModel.removeSongFromPlaylist(song.id)
                 Toast.makeText(context, "已从歌单中移除", Toast.LENGTH_SHORT).show()
-            }
+            },
+            onArtistClick = { mainViewModel.navigateToArtist(it) },
+            onAlbumClick = { mainViewModel.navigateToAlbum(it) }
+        )
+    }
+
+    // ── 歌曲信息弹窗 ──
+    infoSong?.let { song ->
+        SongInfoDialog(
+            song = song,
+            fingerprint = null,
+            onDismiss = { infoSong = null },
+            onArtistClick = { mainViewModel.navigateToArtist(it) }
         )
     }
 }

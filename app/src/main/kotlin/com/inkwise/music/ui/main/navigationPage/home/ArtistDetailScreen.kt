@@ -155,10 +155,12 @@ fun ArtistDetailScreen(
                             }
 
                             // Song list
-                            itemsIndexed(uiState.songs, key = { _, song -> song.id }) { index, song ->
+                            itemsIndexed(uiState.songs, key = { _, song -> song.cloudId ?: song.id }) { index, song ->
                                 SongItem(
                                     song = song,
-                                    isPlaying = playbackState.currentSong?.id == song.id,
+                                    isPlaying = playbackState.currentSong?.let { current ->
+                                        current.cloudId != null && current.cloudId == song.cloudId
+                                    } ?: false,
                                     onClick = { playerViewModel.playSongs(uiState.songs, index) },
                                     addToQueue = { playerViewModel.addToQueue(song) },
                                     onMoreClick = { actionSong = song }

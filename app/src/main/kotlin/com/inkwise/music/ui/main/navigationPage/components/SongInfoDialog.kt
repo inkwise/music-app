@@ -33,7 +33,8 @@ import com.inkwise.music.data.model.Song
 fun SongInfoDialog(
     song: Song,
     fingerprint: String?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onArtistClick: (Long) -> Unit = {},
 ) {
     val context = LocalContext.current
 
@@ -47,7 +48,21 @@ fun SongInfoDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 InfoRow("标题", song.title)
-                InfoRow("艺术家", song.artist)
+                Row(modifier = Modifier.padding(vertical = 4.dp)) {
+                    Text(
+                        text = "艺术家: ",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(0.35f)
+                    )
+                    ArtistText(
+                        artist = song.artist,
+                        artistIds = song.artistIds,
+                        onArtistClick = onArtistClick,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(0.65f)
+                    )
+                }
                 InfoRow("专辑", song.album)
                 InfoRow("时长", formatDuration(song.duration))
                 if (song.codec.isNotBlank()) {

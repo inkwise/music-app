@@ -56,6 +56,7 @@ fun SongActionSheet(
     onDelete: () -> Unit,
     onAddToPlaylist: (Long) -> Unit,
     onRemoveFromPlaylist: () -> Unit,
+    onArtistClick: (Long) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
@@ -81,8 +82,10 @@ fun SongActionSheet(
                         text = song.title,
                         style = MaterialTheme.typography.titleMedium
                     )
-                    Text(
-                        text = song.artist,
+                    ArtistText(
+                        artist = song.artist,
+                        artistIds = song.artistIds,
+                        onArtistClick = onArtistClick,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

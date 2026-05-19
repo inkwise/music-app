@@ -20,9 +20,9 @@ data class Song(
     // 歌手
     @ColumnInfo(name = "artist")
     val artist: String,
-    // 云端歌手ID (只存第一个)
-    @ColumnInfo(name = "artist_id")
-    val artistId: Long? = null,
+    // 云端歌手ID列表
+    @ColumnInfo(name = "artist_ids")
+    val artistIds: List<Long> = emptyList(),
     // 标题
     @ColumnInfo(name = "album")
     val album: String,

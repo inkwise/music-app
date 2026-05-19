@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.inkwise.music.data.dao.DownloadMatchDao
@@ -24,9 +25,10 @@ import com.inkwise.music.data.model.Song
         FingerprintEntity::class,
         DownloadMatchEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
+@TypeConverters(Converters::class)
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun playlistDao(): PlaylistDao
     abstract fun songDao(): SongDao
@@ -96,13 +98,47 @@ abstract class MusicDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 重建 songs 表：artist_id → artist_ids (TEXT)
+                db.execSQL("""
+                    CREATE TABLE songs_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        local_id INTEGER,
+                        cloud_id INTEGER,
+                        title TEXT NOT NULL,
+                        artist TEXT NOT NULL,
+                        artist_ids TEXT,
+                        album TEXT NOT NULL,
+                        duration INTEGER NOT NULL,
+                        codec TEXT NOT NULL DEFAULT '',
+                        sampleRate INTEGER NOT NULL DEFAULT 0,
+                        bitDepth INTEGER NOT NULL DEFAULT 0,
+                        channels INTEGER NOT NULL DEFAULT 0,
+                        bitrate INTEGER NOT NULL DEFAULT 0,
+                        uri TEXT NOT NULL,
+                        path TEXT NOT NULL,
+                        album_art TEXT,
+                        lyrics_url TEXT,
+                        is_local INTEGER NOT NULL DEFAULT 1
+                    )
+                """)
+                db.execSQL("""
+                    INSERT INTO songs_new (id, local_id, cloud_id, title, artist, album, duration, codec, sampleRate, bitDepth, channels, bitrate, uri, path, album_art, lyrics_url, is_local)
+                    SELECT id, local_id, cloud_id, title, artist, album, duration, codec, sampleRate, bitDepth, channels, bitrate, uri, path, album_art, lyrics_url, is_local FROM songs
+                """)
+                db.execSQL("DROP TABLE songs")
+                db.execSQL("ALTER TABLE songs_new RENAME TO songs")
+            }
+        }
+
         fun getInstance(context: Context): MusicDatabase {
             return Room.databaseBuilder(
                 context.applicationContext,
                 MusicDatabase::class.java,
                 "music_database"
             )
-                .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 .build()
         }
     }

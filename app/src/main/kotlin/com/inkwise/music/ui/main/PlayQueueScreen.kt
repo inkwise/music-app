@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.inkwise.music.ui.main.navigationPage.components.ArtistText
 import com.inkwise.music.ui.player.PlayerViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,9 +87,9 @@ fun PlayQueueBottomSheet(
                     onRemove = {
                         playerViewModel.removeFromQueue(index)
                     },
-                    onArtistClick = song.artistId?.let { id ->
-                        { mainViewModel.navigateToArtist(id) }
-                    },
+                    onArtistClick = if (song.artistIds.isNotEmpty()) {
+                        { id -> mainViewModel.navigateToArtist(id) }
+                    } else null,
                 )
             }
         }
@@ -107,7 +108,7 @@ fun QueueItem(
     isCurrent: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
-    onArtistClick: (() -> Unit)? = null,
+    onArtistClick: ((Long) -> Unit)? = null,
 ) {
     Row(
         modifier =
@@ -154,17 +155,23 @@ fun QueueItem(
                         MaterialTheme.colorScheme.onSurface
                     },
             )
-            Text(
-                text = song.artist,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                modifier = if (onArtistClick != null) {
-                    Modifier.clickable(onClick = onArtistClick)
-                } else {
-                    Modifier
-                }
-            )
+            if (onArtistClick != null) {
+                ArtistText(
+                    artist = song.artist,
+                    artistIds = song.artistIds,
+                    onArtistClick = onArtistClick,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            } else {
+                Text(
+                    text = song.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
 
         // 移除按钮

@@ -180,7 +180,7 @@ class ArtistDetailViewModel @Inject constructor(
             cloudId = item.id,
             title = item.title,
             artist = item.artists?.joinToString(", ") { it.name } ?: "未知艺术家",
-            artistId = item.artists?.firstOrNull()?.id,
+            artistIds = item.artists?.map { it.id } ?: emptyList(),
             album = item.album ?: "未知专辑",
             duration = (item.duration * 1000).toLong(),
             codec = item.codec ?: "",

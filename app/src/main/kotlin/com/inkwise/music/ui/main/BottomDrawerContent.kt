@@ -72,6 +72,7 @@ import com.inkwise.music.data.prefs.ParticleEffect
 import com.inkwise.music.data.prefs.PreferencesManager
 import com.inkwise.music.data.prefs.PreferencesManagerEntryPoint
 import com.inkwise.music.ui.effect.ParticleEffectOverlay
+import com.inkwise.music.ui.main.navigationPage.components.ArtistText
 import com.inkwise.music.ui.player.PlayerViewModel
 import kotlinx.coroutines.launch
 
@@ -157,18 +158,21 @@ fun BottomDrawerContent(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(4.dp))
-                val artistId = currentSong?.artistId
-                Text(
-                    text = currentSong?.artist ?: "@inkwise",
-                    color = if (artistId != null) animatedThemeColor else animatedThemeColor,
+                currentSong?.let { song ->
+                    ArtistText(
+                        artist = song.artist,
+                        artistIds = song.artistIds,
+                        onArtistClick = { mainViewModel.navigateToArtist(it) },
+                        color = animatedThemeColor,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1
+                    )
+                } ?: Text(
+                    text = "@inkwise",
+                    color = animatedThemeColor,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = if (artistId != null) {
-                        Modifier.clickable { mainViewModel.navigateToArtist(artistId) }
-                    } else {
-                        Modifier
-                    }
                 )
             }
         }

@@ -40,6 +40,15 @@ class MainViewModel
             }
         }
 
+        private val _navigateToArtistEvents = MutableSharedFlow<Long>()
+        val navigateToArtistEvents: SharedFlow<Long> = _navigateToArtistEvents
+
+        fun navigateToArtist(artistId: Long) {
+            viewModelScope.launch {
+                _navigateToArtistEvents.emit(artistId)
+            }
+        }
+
         private val _uiState = MutableStateFlow(MainUiState())
         val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 

@@ -157,12 +157,18 @@ fun BottomDrawerContent(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(4.dp))
+                val artistId = currentSong?.artistId
                 Text(
                     text = currentSong?.artist ?: "@inkwise",
-                    color = animatedThemeColor,
+                    color = if (artistId != null) animatedThemeColor else animatedThemeColor,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = if (artistId != null) {
+                        Modifier.clickable { mainViewModel.navigateToArtist(artistId) }
+                    } else {
+                        Modifier
+                    }
                 )
             }
         }

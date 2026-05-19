@@ -91,6 +91,14 @@ fun NavigationContent(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.navigateToArtistEvents.collect { artistId ->
+            navController.navigate("artist/$artistId")
+            pagerState.scrollToPage(0)
+            sheetState.partialExpand()
+        }
+    }
+
     LaunchedEffect(uiState.sidebarOpen) {
         if (uiState.sidebarOpen) {
             drawerState.open()

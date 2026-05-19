@@ -12,12 +12,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.inkwise.music.ui.player.PlayerViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayQueueBottomSheet(
     playerViewModel: PlayerViewModel,
+    mainViewModel: MainViewModel = hiltViewModel(),
 ) {
     val playQueue by playerViewModel.playQueue.collectAsState()
     val currentIndex by playerViewModel.currentIndex.collectAsState()
@@ -84,6 +86,9 @@ fun PlayQueueBottomSheet(
                     onRemove = {
                         playerViewModel.removeFromQueue(index)
                     },
+                    onArtistClick = song.artistId?.let { id ->
+                        { mainViewModel.navigateToArtist(id) }
+                    },
                 )
             }
         }
@@ -102,6 +107,7 @@ fun QueueItem(
     isCurrent: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
+    onArtistClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier =
@@ -153,6 +159,11 @@ fun QueueItem(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                modifier = if (onArtistClick != null) {
+                    Modifier.clickable(onClick = onArtistClick)
+                } else {
+                    Modifier
+                }
             )
         }
 

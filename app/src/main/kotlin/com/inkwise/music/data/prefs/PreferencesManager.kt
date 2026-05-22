@@ -59,7 +59,7 @@ class PreferencesManager @Inject constructor() {
         private const val KEY_CACHE_ENABLED = "cache_enabled"
         private const val KEY_MONO_ENABLED = "mono_enabled"
 
-        const val DEFAULT_SERVER_URL = "http://10.0.2.2:8080/api/v1"
+        const val DEFAULT_SERVER_URL = "http://127.0.0.1:8080/api/v1"
     }
 
     private val mmkv: MMKV = MMKV.mmkvWithID("settings")

@@ -1,5 +1,6 @@
 package com.inkwise.music.ui.main.navigationPage.components
 
+import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -29,7 +30,10 @@ fun ArtistText(
             maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
             modifier = if (onArtistNameClick != null) {
-                modifier.clickable { onArtistNameClick(artist) }
+                modifier.clickable {
+                    Log.d("ArtistText", "clicked artist name: $artist")
+                    onArtistNameClick(artist)
+                }
             } else {
                 modifier
             }
@@ -61,7 +65,10 @@ fun ArtistText(
                 style = style,
                 color = color,
                 maxLines = 1,
-                modifier = Modifier.clickable { onArtistClick(id) }
+                modifier = Modifier.clickable {
+                    Log.d("ArtistText", "clicked artist id=$id, name=$name")
+                    onArtistClick(id)
+                }
             )
             if (index < names.size - 1) {
                 Text(

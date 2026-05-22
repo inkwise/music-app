@@ -1,5 +1,6 @@
 package com.inkwise.music.ui.main
 
+import android.util.Log
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -41,6 +42,7 @@ class MainViewModel
         val navigateToArtistEvents = _navigateToArtistEvents.receiveAsFlow()
 
         fun navigateToArtist(artistId: Long) {
+            Log.d("MainViewModel", "navigateToArtist: artistId=$artistId")
             _navigateToArtistEvents.trySend(artistId)
         }
 
@@ -48,6 +50,7 @@ class MainViewModel
         val navigateToArtistByNameEvents = _navigateToArtistByNameEvents.receiveAsFlow()
 
         fun navigateToArtistByName(name: String) {
+            Log.d("MainViewModel", "navigateToArtistByName: name=$name")
             _navigateToArtistByNameEvents.trySend(name)
         }
 

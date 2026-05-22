@@ -26,12 +26,20 @@ android {
         ndk {
             abiFilters.add("arm64-v8a")
         }
+
+        externalNativeBuild {
+            cmake {
+                arguments(
+                    "-DANDROID_HOST_TAG=linux-x86_64",
+                    "-DANDROID_STL=c++_shared",
+                )
+            }
+        }
     }
 
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "4.1.2"
         }
     }
 
@@ -83,9 +91,9 @@ android {
         release {
         	//签名
         	signingConfig = signingConfigs.getByName("release")
-            // 关闭代码混淆/压缩
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // R8 代码混淆/压缩
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

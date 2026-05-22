@@ -103,7 +103,7 @@ class UploadViewModel @Inject constructor(
                         MultipartBody.Part.createFormData("files", file.filename, requestBody)
                     }
 
-                    val response = api.uploadMusic(token, parts)
+                    val response = api.uploadMusic("Bearer $token", parts)
                     if (response.isSuccessful) {
                         response.body()?.let { body ->
                             allResults.addAll(body.results)

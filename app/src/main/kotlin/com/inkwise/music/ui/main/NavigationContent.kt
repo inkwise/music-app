@@ -1,6 +1,7 @@
 package com.inkwise.music.ui.main
 
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -96,6 +97,7 @@ fun NavigationContent(
 
     LaunchedEffect(Unit) {
         viewModel.navigateToArtistEvents.collect { artistId ->
+            Log.d("NavigationContent", "navigating to artist/$artistId")
             navController.navigate("artist/$artistId")
             pagerState.scrollToPage(0)
             sheetState.partialExpand()
@@ -104,6 +106,7 @@ fun NavigationContent(
 
     LaunchedEffect(Unit) {
         viewModel.navigateToArtistByNameEvents.collect { name ->
+            Log.d("NavigationContent", "navigating to artist/by-name/$name")
             navController.navigate("artist/by-name/${Uri.encode(name)}")
             pagerState.scrollToPage(0)
             sheetState.partialExpand()
@@ -256,10 +259,10 @@ fun NavigationContent(
                         )
                     }
                     composable("local") {
-                        LocalSongsScreen()
+                        LocalSongsScreen(mainViewModel = viewModel)
                     }
                     composable("cloud") {
-                        CloudSongsScreen()
+                        CloudSongsScreen(mainViewModel = viewModel)
                     }
                     composable("settings") {
                         SettingsScreen(
@@ -336,7 +339,7 @@ fun NavigationContent(
                             navArgument("playlistId") { type = NavType.LongType }
                         )
                     ) {
-                        PlaylistDetailScreen()
+                        PlaylistDetailScreen(mainViewModel = viewModel)
                     }
                     composable(
                         route = "artist/{artistId}",
@@ -344,7 +347,7 @@ fun NavigationContent(
                             navArgument("artistId") { type = NavType.LongType }
                         )
                     ) {
-                        ArtistDetailScreen()
+                        ArtistDetailScreen(mainViewModel = viewModel)
                     }
                     composable(
                         route = "artist/by-name/{artistName}",
@@ -352,7 +355,7 @@ fun NavigationContent(
                             navArgument("artistName") { type = NavType.StringType }
                         )
                     ) {
-                        ArtistDetailScreen()
+                        ArtistDetailScreen(mainViewModel = viewModel)
                     }
                     composable(
                         route = "album/{albumName}",
@@ -360,7 +363,7 @@ fun NavigationContent(
                             navArgument("albumName") { type = NavType.StringType }
                         )
                     ) {
-                        AlbumDetailScreen()
+                        AlbumDetailScreen(mainViewModel = viewModel)
                     }
                 }
 

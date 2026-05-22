@@ -167,7 +167,11 @@ fun ArtistDetailScreen(
                                     } ?: false,
                                     onClick = { playerViewModel.playSongs(uiState.songs, index) },
                                     addToQueue = { playerViewModel.addToQueue(song) },
-                                    onMoreClick = { actionSong = song }
+                                    onMoreClick = { actionSong = song },
+                                    onArtistClick = { mainViewModel.navigateToArtist(it) },
+                                    onArtistNameClick = if (song.artistIds.isEmpty()) {
+                                        { name: String -> mainViewModel.navigateToArtistByName(name) }
+                                    } else null
                                 )
                             }
                         }

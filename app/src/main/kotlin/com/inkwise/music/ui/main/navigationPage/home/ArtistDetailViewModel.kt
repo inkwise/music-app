@@ -120,18 +120,6 @@ class ArtistDetailViewModel @Inject constructor(
             val token = prefs.authToken.first()
             val serverUrl = prefs.serverUrl.first()
 
-            // 先尝试按名称查找云端艺术家
-            val result = safeApiCall {
-                api.getArtistDetail("Bearer ${token ?: ""}", artistId)
-            }
-
-            if (result is ApiResult.Error) {
-                // 尝试按名称搜索艺术家
-                loadLocalByName(artistName, persistedMatches.toSet())
-                return@launch
-            }
-
-            // 尝试获取按名称的艺术家详情
             val nameResult = safeApiCall {
                 api.getArtistByName("Bearer ${token ?: ""}", artistName)
             }

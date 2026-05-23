@@ -88,10 +88,16 @@ class AuthViewModel @Inject constructor(
 
     fun onUsernameChanged(value: String) {
         _uiState.value = _uiState.value.copy(username = value, message = null)
+        viewModelScope.launch {
+            prefs.saveRememberedCredentials(value, _uiState.value.password, _uiState.value.rememberPassword)
+        }
     }
 
     fun onPasswordChanged(value: String) {
         _uiState.value = _uiState.value.copy(password = value, message = null)
+        viewModelScope.launch {
+            prefs.saveRememberedCredentials(_uiState.value.username, value, _uiState.value.rememberPassword)
+        }
     }
 
     fun onEmailChanged(value: String) {
@@ -100,6 +106,9 @@ class AuthViewModel @Inject constructor(
 
     fun onRememberPasswordChanged(value: Boolean) {
         _uiState.value = _uiState.value.copy(rememberPassword = value)
+        viewModelScope.launch {
+            prefs.saveRememberedCredentials(_uiState.value.username, _uiState.value.password, value)
+        }
     }
 
     fun login(onSuccess: () -> Unit) {

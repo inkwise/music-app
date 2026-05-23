@@ -4,11 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.inkwise.music.data.prefs.PreferencesManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 data class SettingsUiState(
@@ -62,15 +67,38 @@ class SettingsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSaving = true)
-            prefs.setServerUrl(url)
-            _uiState.value = _uiState.value.copy(
-                isSaving = false,
-                savedUrl = url,
-                serverUrl = url,
-                message = "服务器地址已保存，实时生效",
-                isError = false
-            )
+            _uiState.value = _uiState.value.copy(isSaving = true, message = "正在验证服务器...", isError = false)
+            try {
+                val healthUrl = url.replace("/api/v1", "") + "/health"
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
+                    .build()
+                val request = Request.Builder().url(healthUrl).build()
+                val response = withContext(Dispatchers.IO) { client.newCall(request).execute() }
+                if (response.isSuccessful) {
+                    prefs.setServerUrl(url)
+                    _uiState.value = _uiState.value.copy(
+                        isSaving = false,
+                        savedUrl = url,
+                        serverUrl = url,
+                        message = "服务器连接成功，已保存",
+                        isError = false
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isSaving = false,
+                        message = "服务器返回错误 (${response.code})，请检查地址",
+                        isError = true
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isSaving = false,
+                    message = "无法连接服务器: ${e.message}",
+                    isError = true
+                )
+            }
         }
     }
 }

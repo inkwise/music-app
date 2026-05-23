@@ -12,23 +12,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import com.inkwise.music.sync.SyncPlayManager.Role
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SyncDisabled
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.inkwise.music.sync.SyncPlayManager.Role
 
 @Composable
 fun SyncPlaySettingsScreen(
@@ -56,260 +56,252 @@ fun SyncPlaySettingsScreen(
         Spacer(Modifier.height(8.dp))
 
         // 设备信息
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Devices, null, modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                    Text("本机信息", style = MaterialTheme.typography.titleMedium)
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("设备名称: ${uiState.deviceName}",
-                    style = MaterialTheme.typography.bodyMedium)
-                Text("设备 ID: ${uiState.deviceId}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("NTP 同步: ${if (uiState.isNtpSynced) "已同步" else "未同步"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (uiState.isNtpSynced)
-                        MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error)
-            }
-        }
+        DeviceInfoCard(uiState)
 
         Spacer(Modifier.height(16.dp))
 
-        // 角色选择和房间管理
         if (uiState.role == Role.NONE) {
-            // 未加入任何房间 — 显示模式选择
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Sync, null, modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text("同步播放", style = MaterialTheme.typography.titleMedium)
-                    }
-                    Spacer(Modifier.height(16.dp))
-
-                    Text("选择角色", style = MaterialTheme.typography.bodyLarge)
-                    Spacer(Modifier.height(8.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        FilledTonalButton(
-                            onClick = { viewModel.onModeChanged("host") },
-                            modifier = Modifier.weight(1f),
-                            enabled = !uiState.isLoading
-                        ) {
-                            Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("主机模式")
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        FilledTonalButton(
-                            onClick = { viewModel.onModeChanged("slave") },
-                            modifier = Modifier.weight(1f),
-                            enabled = !uiState.isLoading
-                        ) {
-                            Icon(Icons.Default.Link, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("从机模式")
-                        }
-                    }
-                }
-            }
+            EnableSyncCard(uiState, viewModel)
+        } else {
+            ActiveSyncCard(uiState, viewModel)
         }
 
-        // 主机模式
-        if (uiState.selectedMode == "host" && uiState.role == Role.NONE) {
-            Spacer(Modifier.height(16.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("创建同步房间", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = uiState.roomName,
-                        onValueChange = { viewModel.onRoomNameChanged(it) },
-                        label = { Text("房间名称") },
-                        placeholder = { Text("例如: 客厅同步组") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(12.dp))
-
-                    Text("在线设备 (${uiState.devices.size})",
-                        style = MaterialTheme.typography.bodyMedium)
-                    if (uiState.devices.isEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("暂无其他在线设备",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        uiState.devices.forEach { device ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Devices, null,
-                                    Modifier.size(18.dp),
-                                    tint = if (device.isOnline)
-                                        Color(0xFF4CAF50)
-                                    else Color(0xFF9E9E9E))
-                                Spacer(Modifier.width(8.dp))
-                                Text(device.deviceName.ifEmpty { device.deviceId },
-                                    style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { viewModel.createRoom() },
-                        enabled = !uiState.isLoading,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (uiState.isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text("创建房间")
-                    }
-                }
-            }
-        }
-
-        // 从机模式
-        if (uiState.selectedMode == "slave" && uiState.role == Role.NONE) {
-            Spacer(Modifier.height(16.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("加入同步房间", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = uiState.joinRoomId,
-                        onValueChange = { viewModel.onJoinRoomIdChanged(it) },
-                        label = { Text("房间号") },
-                        placeholder = { Text("输入 6 位房间号") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { viewModel.joinRoom() },
-                        enabled = !uiState.isLoading && uiState.joinRoomId.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (uiState.isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text("加入房间")
-                    }
-                }
-            }
-        }
-
-        // 当前房间（已加入后）
-        if (uiState.role != Role.NONE) {
-            Spacer(Modifier.height(16.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val roleLabel = when (uiState.role) {
-                            Role.HOST -> "主机"
-                            Role.SLAVE -> "从机"
-                            else -> ""
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text("当前房间: ${uiState.currentRoomId ?: ""}",
-                                style = MaterialTheme.typography.titleMedium)
-                            Text("角色: $roleLabel",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-
-                    if (uiState.role == Role.HOST) {
-                        Spacer(Modifier.height(12.dp))
-                        HorizontalDivider()
-                        Spacer(Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("音频同步", style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f))
-                            Switch(
-                                checked = uiState.syncActive,
-                                onCheckedChange = { viewModel.toggleSync(it) }
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(12.dp))
-
-                    OutlinedButton(
-                        onClick = { viewModel.leaveRoom() },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Icon(Icons.Default.LinkOff, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("离开房间")
-                    }
-                }
-            }
-        }
-
-        // 错误/提示消息
+        // 消息
         val message = uiState.message
         if (message != null) {
             Spacer(Modifier.height(12.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (uiState.isError)
-                        MaterialTheme.colorScheme.errorContainer
-                    else
-                        MaterialTheme.colorScheme.primaryContainer
-                )
-            ) {
+            MessageCard(message, uiState.isError, viewModel::clearMessage)
+        }
+    }
+}
+
+@Composable
+private fun DeviceInfoCard(uiState: SyncPlayUiState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Devices, null, modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("本机信息", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("设备名称: ${uiState.deviceName}",
+                style = MaterialTheme.typography.bodyMedium)
+            Text("设备 ID: ${uiState.deviceId}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("连接状态: ${if (uiState.isConnected) "已连接" else "未连接"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (uiState.isConnected) Color(0xFF4CAF50) else Color(0xFF9E9E9E))
+        }
+    }
+}
+
+@Composable
+private fun EnableSyncCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewModel) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Sync, null, modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("音频同步", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("启用后可与同一账号下的其他设备同步播放",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(16.dp))
+
+            if (uiState.isLoading) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = message,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (uiState.isError)
-                            MaterialTheme.colorScheme.onErrorContainer
-                        else
-                            MaterialTheme.colorScheme.onPrimaryContainer
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
                     )
-                    TextButton(onClick = { viewModel.clearMessage() }) {
-                        Icon(Icons.Default.Close, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("正在启用同步...", style = MaterialTheme.typography.bodyMedium)
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    FilledTonalButton(
+                        onClick = { viewModel.enableSync(Role.HOST) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("作为主机启动")
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    FilledTonalButton(
+                        onClick = { viewModel.enableSync(Role.SLAVE) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Devices, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("作为从机启动")
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveSyncCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewModel) {
+    val roleLabel = when (uiState.role) {
+        Role.HOST -> "主机"
+        Role.SLAVE -> "从机"
+        else -> ""
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Sync, null, modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("音频同步已启用", style = MaterialTheme.typography.titleMedium)
+                    Text("角色: $roleLabel",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+            }
+
+            // 主机：音频同步总开关 + 从机设备列表
+            if (uiState.role == Role.HOST) {
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("音频同步", style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = uiState.syncActive,
+                        onCheckedChange = { viewModel.toggleSync(it) }
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+
+                Text("同步设备 (${uiState.syncDevices.size})",
+                    style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+
+                if (uiState.syncDevices.isEmpty()) {
+                    Text("暂无其他设备", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    uiState.syncDevices.forEach { device ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Devices, null,
+                                Modifier.size(20.dp),
+                                tint = if (device.syncEnabled) Color(0xFF4CAF50) else Color(0xFF9E9E9E))
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(device.deviceName.ifEmpty { device.deviceId },
+                                    style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = if (device.syncEnabled) "同步已开启" else "同步已关闭",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = device.syncEnabled,
+                                onCheckedChange = { enabled ->
+                                    viewModel.toggleSlave(device.deviceId, enabled)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 从机：状态信息
+            if (uiState.role == Role.SLAVE) {
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = if (uiState.isConnected) "已连接到主机，等待同步指令..." else "正在连接主机...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (uiState.isConnected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (uiState.hostDeviceId != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("主机设备: ${uiState.hostDeviceId}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
+
+            OutlinedButton(
+                onClick = { viewModel.disableSync() },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(Icons.Default.SyncDisabled, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("关闭音频同步")
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageCard(message: String, isError: Boolean, onDismiss: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isError)
+                MaterialTheme.colorScheme.errorContainer
+            else
+                MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = message,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isError)
+                    MaterialTheme.colorScheme.onErrorContainer
+                else
+                    MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            TextButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, null, Modifier.size(16.dp))
             }
         }
     }

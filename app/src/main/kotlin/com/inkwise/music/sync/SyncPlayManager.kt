@@ -2,13 +2,7 @@ package com.inkwise.music.sync
 
 import android.content.Context
 import android.util.Log
-import com.inkwise.music.data.model.Song
 import com.inkwise.music.data.network.ApiService
-import com.inkwise.music.data.network.ApiResult
-import com.inkwise.music.data.network.model.CreateRoomRequest
-import com.inkwise.music.data.network.model.CreateRoomResponse
-import com.inkwise.music.data.network.model.JoinRoomRequest
-import com.inkwise.music.data.network.model.LeaveRoomRequest
 import com.inkwise.music.data.network.model.RegisterDeviceRequest
 import com.inkwise.music.data.network.model.SyncMessage
 import com.inkwise.music.data.prefs.PreferencesManager
@@ -18,12 +12,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
@@ -45,28 +38,25 @@ object SyncPlayManager {
     private val _syncActive = MutableStateFlow(false)
     val syncActive: StateFlow<Boolean> = _syncActive.asStateFlow()
 
-    private val _currentRoomId = MutableStateFlow<String?>(null)
-    val currentRoomId: StateFlow<String?> = _currentRoomId.asStateFlow()
+    private val _connected = MutableStateFlow(false)
+    val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
     private var ntpClient: NtpClient? = null
     private var wsClient: SyncWsClient? = null
     private var apiService: ApiService? = null
     private var token: String = ""
+    private var prefs: PreferencesManager? = null
     private var dynamicSyncJob: Job? = null
 
-    // 从机播放状态（用于动态校正）
-    @Volatile
-    private var slavePlayStartServerTimeMs: Long = 0L
-    @Volatile
-    private var slavePlayStartPositionMs: Long = 0L
-    @Volatile
-    private var slaveCurrentSongId: Long = 0L
+    @Volatile private var slavePlayStartServerTimeMs: Long = 0L
+    @Volatile private var slavePlayStartPositionMs: Long = 0L
+    @Volatile private var slaveCurrentSongId: Long = 0L
 
     fun init(context: Context, prefs: PreferencesManager, okHttpClient: OkHttpClient) {
+        this.prefs = prefs
         ntpClient = NtpClient()
         wsClient = SyncWsClient(prefs)
 
-        // 注册同步拦截器：Host 模式拦截本地操作转发到从机，Slave 模式阻止本地操作
         MusicPlayerManager.syncInterceptor = { action, positionMs ->
             when (_role.value) {
                 Role.HOST -> {
@@ -78,7 +68,7 @@ object SyncPlayManager {
                     }
                     true
                 }
-                Role.SLAVE -> true // 从机不响应本地操作
+                Role.SLAVE -> true
                 Role.NONE -> false
             }
         }
@@ -86,7 +76,7 @@ object SyncPlayManager {
         Log.d(TAG, "SyncPlayManager initialized")
     }
 
-    // ── 设备注册 ──
+    // ── 注册设备 ──
 
     suspend fun registerDevice(api: ApiService, authToken: String, prefs: PreferencesManager) {
         try {
@@ -102,39 +92,52 @@ object SyncPlayManager {
         }
     }
 
-    // ── Host 操作 ──
+    // ── 启用/关闭同步 ──
 
-    suspend fun createRoom(
-        api: ApiService,
-        authToken: String,
-        prefs: PreferencesManager,
-        roomName: String
-    ): Result<String> {
+    suspend fun enableSync(api: ApiService, authToken: String, p: PreferencesManager, r: Role): Result<Unit> {
         this.apiService = api
         this.token = authToken
+        this.prefs = p
 
-        val deviceId = prefs.getDeviceId()
-        val response = api.createSyncRoom(authToken, CreateRoomRequest(
-            name = roomName,
-            deviceId = deviceId
-        ))
+        val jwtToken = authToken.removePrefix("Bearer ")
+        val deviceId = p.getDeviceId()
+        val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
 
-        if (!response.isSuccessful) {
-            return Result.failure(Exception("创建房间失败: ${response.code()}"))
+        // 注册设备并连接 WebSocket
+        registerDevice(api, authToken, p)
+        wsClient?.connect(jwtToken, deviceId, deviceName)
+
+        // 等待 WS 连接建立
+        delay(500)
+
+        // 设置角色
+        wsClient?.send(SyncMessage(type = "set_role", payload = mapOf("role" to r.name.lowercase())))
+
+        _role.value = r
+
+        // 从机：启动消息处理
+        if (r == Role.SLAVE) {
+            startSlaveMessageHandler()
+            // 请求当前状态
+            delay(300)
+            wsClient?.send(SyncMessage(type = "request_state"))
         }
 
-        val body = response.body() ?: return Result.failure(Exception("创建房间失败: 空响应"))
-        val roomId = body.roomId
-
-        _role.value = Role.HOST
-        _currentRoomId.value = roomId
-
-        wsClient?.connect(authToken, deviceId, OkHttpClient(), roomId)
-        ntpClient?.performNtpSync(wsClient!!)
-
-        Log.d(TAG, "Room created: $roomId, host: $deviceId")
-        return Result.success(roomId)
+        _connected.value = true
+        Log.d(TAG, "Sync enabled as $r")
+        return Result.success(Unit)
     }
+
+    fun disableSync() {
+        stopDynamicSync()
+        _syncActive.value = false
+        _role.value = Role.NONE
+        _connected.value = false
+        wsClient?.disconnect()
+        Log.d(TAG, "Sync disabled")
+    }
+
+    // ── 主机操作 ──
 
     fun hostPlay() {
         if (_role.value != Role.HOST) return
@@ -146,13 +149,12 @@ object SyncPlayManager {
         if (queue.isEmpty()) return
 
         val song = queue[currentIndex]
-        val startPos = MusicPlayerManager.playbackState.value.position
+        val startPos = MusicPlayerManager.playbackState.value.currentPosition
         val triggerTime = ntp.getServerTimeMs() + TRIGGER_BUFFER_MS
 
         scope.launch {
             ws.send(SyncMessage(
                 type = "sync_play",
-                roomId = _currentRoomId.value,
                 timestampMs = triggerTime,
                 payload = mapOf(
                     "trigger_time_ms" to triggerTime,
@@ -161,12 +163,9 @@ object SyncPlayManager {
                 )
             ))
 
-            // 本地在精确时刻播放
             val localTime = ntp.serverTimeToLocalTimeMs(triggerTime)
             val waitMs = localTime - System.currentTimeMillis()
-            if (waitMs > 0) {
-                delay(waitMs)
-            }
+            if (waitMs > 0) delay(waitMs)
             MusicPlayerManager.play()
         }
     }
@@ -176,13 +175,12 @@ object SyncPlayManager {
         val ntp = ntpClient ?: return
         val ws = wsClient ?: return
 
-        val pos = MusicPlayerManager.playbackState.value.position
+        val pos = MusicPlayerManager.playbackState.value.currentPosition
         val triggerTime = ntp.getServerTimeMs() + TRIGGER_BUFFER_MS
 
         scope.launch {
             ws.send(SyncMessage(
                 type = "sync_pause",
-                roomId = _currentRoomId.value,
                 timestampMs = triggerTime,
                 payload = mapOf(
                     "trigger_time_ms" to triggerTime,
@@ -207,7 +205,6 @@ object SyncPlayManager {
         scope.launch {
             ws.send(SyncMessage(
                 type = "sync_seek",
-                roomId = _currentRoomId.value,
                 timestampMs = triggerTime,
                 payload = mapOf(
                     "trigger_time_ms" to triggerTime,
@@ -237,7 +234,6 @@ object SyncPlayManager {
         scope.launch {
             ws.send(SyncMessage(
                 type = "sync_skip",
-                roomId = _currentRoomId.value,
                 timestampMs = triggerTime,
                 payload = mapOf(
                     "trigger_time_ms" to triggerTime,
@@ -255,60 +251,28 @@ object SyncPlayManager {
     fun toggleSync(enable: Boolean) {
         _syncActive.value = enable
         if (enable && _role.value == Role.HOST) {
-            // 同步当前播放状态给所有从机
             hostPlay()
         } else if (!enable && _role.value == Role.HOST) {
-            // 发送暂停指令
             hostPause()
         }
     }
 
-    // ── Slave 操作 ──
-
-    suspend fun joinRoom(
-        api: ApiService,
-        authToken: String,
-        prefs: PreferencesManager,
-        roomId: String
-    ): Result<Unit> {
-        this.apiService = api
-        this.token = authToken
-
-        val deviceId = prefs.getDeviceId()
-        val response = api.joinSyncRoom(authToken, roomId, JoinRoomRequest(deviceId = deviceId))
-
-        if (!response.isSuccessful) {
-            return Result.failure(Exception("加入房间失败: ${response.code()}"))
-        }
-
-        _role.value = Role.SLAVE
-        _currentRoomId.value = roomId
-
-        wsClient?.connect(authToken, deviceId, OkHttpClient(), roomId)
-        ntpClient?.performNtpSync(wsClient!!)
-
-        // 启动消息处理
-        startSlaveMessageHandler()
-
-        // 请求当前房间状态
+    fun toggleSlave(deviceId: String, enabled: Boolean) {
+        val ws = wsClient ?: return
         scope.launch {
-            delay(500) // 等待 WS 连接建立
-            wsClient?.send(SyncMessage(
-                type = "request_room_state",
-                roomId = roomId
+            ws.send(SyncMessage(
+                type = "toggle_slave",
+                payload = mapOf("device_id" to deviceId, "enabled" to enabled)
             ))
         }
-
-        Log.d(TAG, "Joined room: $roomId as slave")
-        return Result.success(Unit)
     }
+
+    // ── 从机操作 ──
 
     private fun startSlaveMessageHandler() {
         val ws = wsClient ?: return
         scope.launch {
-            ws.messages.collect { msg ->
-                handleSlaveMessage(msg)
-            }
+            ws.messages.collect { msg -> handleSlaveMessage(msg) }
         }
     }
 
@@ -342,17 +306,20 @@ object SyncPlayManager {
             }
             "host_disconnected" -> {
                 MusicPlayerManager.pause()
-                _role.value = Role.NONE
-                _currentRoomId.value = null
+                _connected.value = false
                 stopDynamicSync()
                 Log.w(TAG, "Host disconnected, paused")
             }
-            "room_state" -> {
-                handleRoomState(msg.payload ?: return)
+            "slave_sync_toggled" -> {
+                val payload = msg.payload ?: return
+                val enabled = payload["enabled"] as? Boolean ?: true
+                if (!enabled && _role.value == Role.SLAVE) {
+                    MusicPlayerManager.pause()
+                    stopDynamicSync()
+                }
             }
-            "member_joined", "member_left" -> {
-                // UI 会通过 StateFlow 反映
-                Log.d(TAG, "Room event: ${msg.type} - ${msg.senderDeviceId}")
+            "member_joined", "member_left", "role_changed" -> {
+                Log.d(TAG, "Event: ${msg.type} - ${msg.senderDeviceId}")
             }
         }
     }
@@ -364,15 +331,11 @@ object SyncPlayManager {
         val localTriggerTime = ntp.serverTimeToLocalTimeMs(triggerTimeServerMs)
         val waitMs = localTriggerTime - System.currentTimeMillis()
 
-        // 预加载歌曲
         loadSongForSlave(songId, startPosMs)
 
         if (waitMs > 5) {
             delay(waitMs - 5)
-            // 精确等待剩余时间
-            while (System.currentTimeMillis() < localTriggerTime) {
-                // busy-wait for last few ms
-            }
+            while (System.currentTimeMillis() < localTriggerTime) {}
         }
 
         BassEngine.play()
@@ -380,7 +343,6 @@ object SyncPlayManager {
         slavePlayStartPositionMs = startPosMs
         slaveCurrentSongId = songId
         startDynamicSync()
-        Log.d(TAG, "Slave play at server_time=$triggerTimeServerMs, song=$songId")
     }
 
     private suspend fun executePauseAtTime(triggerTimeServerMs: Long) {
@@ -390,14 +352,11 @@ object SyncPlayManager {
 
         if (waitMs > 5) {
             delay(waitMs - 5)
-            while (System.currentTimeMillis() < localTriggerTime) {
-                // busy-wait
-            }
+            while (System.currentTimeMillis() < localTriggerTime) {}
         }
 
         BassEngine.pause()
         stopDynamicSync()
-        Log.d(TAG, "Slave pause at server_time=$triggerTimeServerMs")
     }
 
     private suspend fun executeSeekAtTime(triggerTimeServerMs: Long, seekPosMs: Long) {
@@ -407,15 +366,12 @@ object SyncPlayManager {
 
         if (waitMs > 5) {
             delay(waitMs - 5)
-            while (System.currentTimeMillis() < localTriggerTime) {
-                // busy-wait
-            }
+            while (System.currentTimeMillis() < localTriggerTime) {}
         }
 
         BassEngine.seekTo(seekPosMs)
         slavePlayStartServerTimeMs = triggerTimeServerMs
         slavePlayStartPositionMs = seekPosMs
-        Log.d(TAG, "Slave seek to ${seekPosMs}ms")
     }
 
     private suspend fun executeSkipAtTime(triggerTimeServerMs: Long, newSongId: Long) {
@@ -429,9 +385,7 @@ object SyncPlayManager {
 
         if (waitMs > 5) {
             delay(waitMs - 5)
-            while (System.currentTimeMillis() < localTriggerTime) {
-                // busy-wait
-            }
+            while (System.currentTimeMillis() < localTriggerTime) {}
         }
 
         BassEngine.play()
@@ -439,34 +393,24 @@ object SyncPlayManager {
         slavePlayStartPositionMs = 0
         slaveCurrentSongId = newSongId
         startDynamicSync()
-        Log.d(TAG, "Slave skip to song=$newSongId")
     }
 
-    // ── 从机加载歌曲 ──
-
     private fun loadSongForSlave(songId: Long, startPosMs: Long) {
-        // 从队列中查找歌曲
         val queue = MusicPlayerManager.playQueue.value
-        val song = queue.find { (it.cloudId ?: it.id) == songId }
-            ?: queue.firstOrNull()
-            ?: return
+        val song = queue.find { (it.cloudId ?: it.id) == songId } ?: queue.firstOrNull() ?: return
 
-        // 获取流媒体 URL
         val streamUrl = "http://127.0.0.1:8080/api/v1/music/${song.cloudId ?: song.id}/stream"
 
         try {
             BassEngine.load(streamUrl, useTempo = true)
-            if (startPosMs > 0) {
-                BassEngine.seekTo(startPosMs)
-            }
+            if (startPosMs > 0) BassEngine.seekTo(startPosMs)
             slaveCurrentSongId = songId
-            Log.d(TAG, "Slave loaded song $songId from $streamUrl, seek=$startPosMs")
         } catch (e: Exception) {
             Log.e(TAG, "Slave load failed: ${e.message}")
         }
     }
 
-    // ── 动态速度校正（从机）──
+    // ── 动态速度校正 ──
 
     private fun startDynamicSync() {
         stopDynamicSync()
@@ -476,22 +420,18 @@ object SyncPlayManager {
             while (isActive) {
                 delay(DYNAMIC_SYNC_INTERVAL_MS)
                 val ntp = ntpClient ?: continue
-                if (!BassEngine.isPlaying) continue
+                if (!BassEngine.isPlaying.value) continue
 
                 val serverTime = ntp.getServerTimeMs()
                 val localPos = BassEngine.getPosition()
-
-                // 预期位置 = 开始时位置 + (服务器当前时间 - 开始播放时的服务器时间)
                 val elapsed = serverTime - slavePlayStartServerTimeMs
                 val expectedPos = slavePlayStartPositionMs + elapsed
                 val drift = expectedPos - localPos
 
                 if (kotlin.math.abs(drift) > 3) {
-                    // 漂移超过 3ms 时调整速度
                     val correction = (drift / 1000.0).coerceIn(-0.001, 0.001)
                     val targetSpeed = (1.0 + correction).coerceIn(
-                        MIN_CORRECTION_SPEED.toDouble(),
-                        MAX_CORRECTION_SPEED.toDouble()
+                        MIN_CORRECTION_SPEED.toDouble(), MAX_CORRECTION_SPEED.toDouble()
                     )
                     BassEngine.setSpeed(targetSpeed.toFloat())
                 }
@@ -502,57 +442,7 @@ object SyncPlayManager {
     private fun stopDynamicSync() {
         dynamicSyncJob?.cancel()
         dynamicSyncJob = null
-        // 恢复默认速度
         BassEngine.setSpeed(1.0f)
-    }
-
-    // ── 重连处理 ──
-
-    private suspend fun handleRoomState(payload: Map<String, Any?>) {
-        val ntp = ntpClient ?: return
-        val status = payload["status"] as? String ?: "idle"
-        val songId = (payload["current_song_id"] as? Number)?.toLong()
-        val positionMs = (payload["position_ms"] as? Number)?.toLong() ?: 0L
-        val serverTimeMs = (payload["server_time_ms"] as? Number)?.toLong() ?: ntp.getServerTimeMs()
-
-        if (status == "playing" && songId != null) {
-            // 估算当前位置：服务端记录位置 + (当前时间 - 记录时间)
-            val elapsed = ntp.getServerTimeMs() - serverTimeMs
-            val estimatedPos = positionMs + elapsed.coerceAtLeast(0)
-
-            loadSongForSlave(songId, estimatedPos)
-            BassEngine.play()
-            slavePlayStartServerTimeMs = ntp.getServerTimeMs()
-            slavePlayStartPositionMs = estimatedPos
-            slaveCurrentSongId = songId
-            startDynamicSync()
-            Log.d(TAG, "Slave rejoined: song=$songId, estimatedPos=$estimatedPos")
-        } else if (status == "paused" && songId != null) {
-            loadSongForSlave(songId, positionMs)
-            slaveCurrentSongId = songId
-            Log.d(TAG, "Slave rejoined: paused at song=$songId, pos=$positionMs")
-        }
-    }
-
-    // ── 离开房间 ──
-
-    fun leaveRoom() {
-        val roomId = _currentRoomId.value ?: return
-        val api = apiService ?: return
-        val deviceId = com.tencent.mmkv.MMKV.mmkvWithID("settings")
-            .decodeString("sync_device_id", "unknown") ?: "unknown"
-
-        scope.launch {
-            try {
-                api.leaveSyncRoom(token, roomId, LeaveRoomRequest(deviceId = deviceId))
-            } catch (_: Exception) {}
-        }
-
-        stopDynamicSync()
-        wsClient?.disconnect()
-        _role.value = Role.NONE
-        _currentRoomId.value = null
-        _syncActive.value = false
     }
 
     fun release() {

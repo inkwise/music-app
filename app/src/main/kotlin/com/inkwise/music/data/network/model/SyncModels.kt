@@ -10,22 +10,9 @@ data class RegisterDeviceRequest(
     @SerializedName("device_type") val deviceType: String = "android"
 )
 
-data class CreateRoomRequest(
-    val name: String,
+data class ToggleSlaveRequest(
     @SerializedName("device_id") val deviceId: String,
-    @SerializedName("slave_device_ids") val slaveDeviceIds: List<String>? = null
-)
-
-data class JoinRoomRequest(
-    @SerializedName("device_id") val deviceId: String
-)
-
-data class KickMemberRequest(
-    @SerializedName("device_id") val deviceId: String
-)
-
-data class LeaveRoomRequest(
-    @SerializedName("device_id") val deviceId: String
+    val enabled: Boolean
 )
 
 // ── REST 响应 ──
@@ -41,37 +28,17 @@ data class DeviceInfo(
     @SerializedName("last_seen") val lastSeen: String? = null
 )
 
-data class SyncRoom(
-    @SerializedName("room_id") val roomId: String,
-    val name: String = "",
-    @SerializedName("host_user_id") val hostUserId: Long? = null,
-    @SerializedName("host_device_id") val hostDeviceId: String = "",
-    val status: String = "idle",
-    @SerializedName("current_song_id") val currentSongId: Long? = null,
-    val members: List<RoomMember>? = null
-)
-
-data class RoomMember(
+data class SyncDeviceInfo(
     @SerializedName("device_id") val deviceId: String,
     @SerializedName("device_name") val deviceName: String = "",
     val role: String = "slave",
-    @SerializedName("is_connected") val isConnected: Boolean = false
+    @SerializedName("sync_enabled") val syncEnabled: Boolean = true
 )
 
-data class CreateRoomResponse(
-    @SerializedName("room_id") val roomId: String,
-    val name: String = "",
-    @SerializedName("host_device_id") val hostDeviceId: String = "",
-    val status: String = "idle"
-)
-
-data class RoomResponse(
-    val room: SyncRoom? = null,
-    val members: List<RoomMember>? = null
-)
-
-data class RoomListResponse(
-    val rooms: List<SyncRoom>? = null
+data class SyncStatusResponse(
+    @SerializedName("user_id") val userId: Long = 0,
+    @SerializedName("host_device_id") val hostDeviceId: String? = null,
+    val devices: List<SyncDeviceInfo>? = null
 )
 
 data class DeviceListResponse(
@@ -82,7 +49,6 @@ data class DeviceListResponse(
 
 data class SyncMessage(
     val type: String,
-    @SerializedName("room_id") val roomId: String? = null,
     @SerializedName("timestamp_ms") val timestampMs: Long? = null,
     @SerializedName("sender_device_id") val senderDeviceId: String? = null,
     val payload: Map<String, Any?>? = null

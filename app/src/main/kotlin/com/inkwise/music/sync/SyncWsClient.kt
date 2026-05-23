@@ -14,8 +14,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.OkHttpClient
@@ -23,6 +25,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
@@ -44,13 +47,12 @@ class SyncWsClient(
     private var webSocket: WebSocket? = null
     private var okHttpClient: OkHttpClient? = null
     private var token: String = ""
-    private var currentRoomId: String? = null
+    private var deviceName: String = ""
     private var reconnectJob: Job? = null
     private var heartbeatJob: Job? = null
     private var reconnectDelay = INITIAL_RECONNECT_DELAY_MS
     private var shouldReconnect = false
 
-    // NTP 请求的挂起协程等待
     private var ntpContinuation: kotlinx.coroutines.CancellableContinuation<Map<String, Long>>? = null
 
     private val _messages = MutableSharedFlow<SyncMessage>(extraBufferCapacity = 64)
@@ -59,10 +61,10 @@ class SyncWsClient(
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    fun connect(token: String, deviceId: String, okHttp: OkHttpClient, roomId: String? = null) {
+    fun connect(token: String, deviceId: String, name: String, okHttp: OkHttpClient? = null) {
         this.token = token
-        this.currentRoomId = roomId
-        this.okHttpClient = okHttp
+        this.deviceName = name
+        if (okHttp != null) this.okHttpClient = okHttp
         this.shouldReconnect = true
         this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS
         doConnect()
@@ -72,23 +74,8 @@ class SyncWsClient(
         if (_connectionState.value == ConnectionState.CONNECTED) return
         _connectionState.value = ConnectionState.CONNECTING
 
-        val serverUrl = prefs.serverUrl.let { flow ->
-            // 同步获取最新值
-            var url = "http://127.0.0.1:8080"
-            kotlinx.coroutines.runBlocking {
-                kotlinx.coroutines.flow.first { true }.let {
-                    // fallback to default
-                }
-            }
-            url
-        }
-
-        // 从 URL 提取 host:port，转换为 ws:// 协议
-        val httpUrl = prefs.serverUrl.let {
-            // 通过 MMKV 直接读取
-            val mmkv = com.tencent.mmkv.MMKV.mmkvWithID("settings")
-            mmkv.decodeString("server_url", "http://127.0.0.1:8080/api/v1") ?: "http://127.0.0.1:8080/api/v1"
-        }
+        val httpUrl = kotlinx.coroutines.runBlocking { prefs.serverUrl.first() }
+            .ifBlank { "http://127.0.0.1:8080/api/v1" }
 
         val wsHost = httpUrl
             .removePrefix("https://")
@@ -98,10 +85,10 @@ class SyncWsClient(
         val wsScheme = if (httpUrl.startsWith("https")) "wss" else "ws"
 
         val deviceId = prefs.getDeviceId()
-        val baseUrl = "$wsScheme://$wsHost/api/v1/ws?token=$token&device_id=$deviceId"
-        val url = if (currentRoomId != null) "$baseUrl&room_id=$currentRoomId" else baseUrl
+        val encodedName = URLEncoder.encode(deviceName, "UTF-8")
+        val url = "$wsScheme://$wsHost/api/v1/ws?token=$token&device_id=$deviceId&device_name=$encodedName"
 
-        Log.d(TAG, "Connecting to $url")
+        Log.d(TAG, "Connecting to $wsHost...")
 
         val request = Request.Builder().url(url).build()
         val client = okHttpClient ?: return
@@ -134,11 +121,9 @@ class SyncWsClient(
                         "pong" -> return
                     }
 
-                    // 构造 SyncMessage 并发射
                     val payload = raw["payload"] as? Map<String, Any?>
                     val syncMsg = SyncMessage(
                         type = msgType,
-                        roomId = raw["room_id"] as? String,
                         timestampMs = (raw["timestamp_ms"] as? Double)?.toLong(),
                         senderDeviceId = raw["sender_device_id"] as? String,
                         payload = payload?.mapValues { it.value }
@@ -196,7 +181,7 @@ class SyncWsClient(
             delay(reconnectDelay)
             reconnectDelay = (reconnectDelay * 2).coerceAtMost(MAX_RECONNECT_DELAY_MS)
             if (shouldReconnect) {
-                Log.d(TAG, "Reconnecting in ${reconnectDelay}ms...")
+                Log.d(TAG, "Reconnecting...")
                 doConnect()
             }
         }
@@ -230,9 +215,5 @@ class SyncWsClient(
         webSocket?.close(1000, "User disconnected")
         webSocket = null
         _connectionState.value = ConnectionState.DISCONNECTED
-    }
-
-    fun setRoomId(roomId: String?) {
-        currentRoomId = roomId
     }
 }

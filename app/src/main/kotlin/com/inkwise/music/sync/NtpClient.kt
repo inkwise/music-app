@@ -107,13 +107,13 @@ class NtpClient {
     fun startPeriodicSync(
         scope: CoroutineScope,
         wsClient: SyncWsClient,
-        isActive: Flow<Boolean>
+        syncActiveFlow: Flow<Boolean>
     ) {
         resyncJob?.cancel()
         resyncJob = scope.launch {
             var active = false
             launch {
-                isActive.collect { active = it }
+                syncActiveFlow.collect { active = it }
             }
             while (isActive) {
                 val interval = if (active) ACTIVE_RESYNC_INTERVAL_MS else IDLE_RESYNC_INTERVAL_MS

@@ -32,6 +32,16 @@ import com.inkwise.music.data.network.model.CreateShareLinkResponse
 import com.inkwise.music.data.network.model.SearchSuggestionsResponse
 import com.inkwise.music.data.network.model.ReorderPlaylistRequest
 import com.inkwise.music.data.network.model.ReorderPlaylistResponse
+import com.inkwise.music.data.network.model.RegisterDeviceRequest
+import com.inkwise.music.data.network.model.DeviceListResponse
+import com.inkwise.music.data.network.model.CreateRoomRequest
+import com.inkwise.music.data.network.model.CreateRoomResponse
+import com.inkwise.music.data.network.model.JoinRoomRequest
+import com.inkwise.music.data.network.model.LeaveRoomRequest
+import com.inkwise.music.data.network.model.KickMemberRequest
+import com.inkwise.music.data.network.model.RoomListResponse
+import com.inkwise.music.data.network.model.RoomResponse
+import com.inkwise.music.data.network.model.NtpTimeResponse
 import okhttp3.MultipartBody
 import retrofit2.Response
 import retrofit2.http.Body
@@ -213,4 +223,75 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("id") musicId: Long
     ): Response<okhttp3.ResponseBody>
+
+    // ── 同步播放：设备管理 ──
+
+    @POST("/devices/register")
+    suspend fun registerDevice(
+        @Header("Authorization") token: String,
+        @Body request: RegisterDeviceRequest
+    ): Response<Map<String, Any>>
+
+    @GET("/devices")
+    suspend fun listDevices(
+        @Header("Authorization") token: String,
+        @Query("exclude_device_id") excludeDeviceId: String? = null
+    ): Response<DeviceListResponse>
+
+    @DELETE("/devices/{device_id}")
+    suspend fun unregisterDevice(
+        @Header("Authorization") token: String,
+        @Path("device_id") deviceId: String
+    ): Response<Unit>
+
+    // ── 同步播放：房间管理 ──
+
+    @POST("/sync/rooms")
+    suspend fun createSyncRoom(
+        @Header("Authorization") token: String,
+        @Body request: CreateRoomRequest
+    ): Response<CreateRoomResponse>
+
+    @GET("/sync/rooms")
+    suspend fun listSyncRooms(
+        @Header("Authorization") token: String
+    ): Response<RoomListResponse>
+
+    @POST("/sync/rooms/{room_id}/join")
+    suspend fun joinSyncRoom(
+        @Header("Authorization") token: String,
+        @Path("room_id") roomId: String,
+        @Body request: JoinRoomRequest
+    ): Response<Map<String, Any>>
+
+    @POST("/sync/rooms/{room_id}/leave")
+    suspend fun leaveSyncRoom(
+        @Header("Authorization") token: String,
+        @Path("room_id") roomId: String,
+        @Body request: LeaveRoomRequest
+    ): Response<Map<String, Any>>
+
+    @GET("/sync/rooms/{room_id}")
+    suspend fun getSyncRoom(
+        @Header("Authorization") token: String,
+        @Path("room_id") roomId: String
+    ): Response<RoomResponse>
+
+    @GET("/sync/rooms/{room_id}/members")
+    suspend fun listRoomMembers(
+        @Header("Authorization") token: String,
+        @Path("room_id") roomId: String
+    ): Response<Map<String, Any>>
+
+    @POST("/sync/rooms/{room_id}/kick")
+    suspend fun kickRoomMember(
+        @Header("Authorization") token: String,
+        @Path("room_id") roomId: String,
+        @Body request: KickMemberRequest
+    ): Response<Map<String, Any>>
+
+    // ── NTP 时间同步 ──
+
+    @GET("/ntp/time")
+    suspend fun getNtpTime(): Response<NtpTimeResponse>
 }

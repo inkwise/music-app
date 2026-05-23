@@ -27,6 +27,7 @@ data class SavedPlaybackState(
 class PreferencesManager @Inject constructor() {
 
     companion object {
+        private const val KEY_DEVICE_ID = "sync_device_id"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_AUTH_TOKEN = "auth_token"
         private const val KEY_USERNAME = "username"
@@ -393,5 +394,15 @@ class PreferencesManager @Inject constructor() {
         } catch (_: Exception) {
             ParticleEffect.NONE
         } else ParticleEffect.NONE
+    }
+
+    // ── 设备 ID（同步播放用）──
+
+    fun getDeviceId(): String {
+        val existing = mmkv.decodeString(KEY_DEVICE_ID, null)
+        if (existing != null) return existing
+        val newId = java.util.UUID.randomUUID().toString()
+        mmkv.encode(KEY_DEVICE_ID, newId)
+        return newId
     }
 }

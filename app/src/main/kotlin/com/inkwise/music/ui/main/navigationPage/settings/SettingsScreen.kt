@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,6 +41,7 @@ fun SettingsScreen(
     onNavigateToUI: () -> Unit,
     onNavigateToPlayback: () -> Unit,
     onNavigateToAudioEffect: () -> Unit,
+    onNavigateToSyncPlay: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -119,6 +121,13 @@ fun SettingsScreen(
                     title = "音效设置",
                     subtitle = "压限器、变速、混响、DSD、D2P 等",
                     onClick = onNavigateToAudioEffect
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                SettingsItem(
+                    icon = Icons.Default.Sync,
+                    title = "同步播放",
+                    subtitle = "多设备音频同步、NTP 时钟校准",
+                    onClick = onNavigateToSyncPlay
                 )
             }
         }

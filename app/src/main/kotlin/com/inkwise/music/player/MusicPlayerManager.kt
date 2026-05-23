@@ -185,6 +185,11 @@ object MusicPlayerManager {
         BassEngine.applyMonoToActiveChannel(enabled)
     }
 
+    // 同步播放拦截器：返回 true 表示已拦截，不执行正常逻辑
+    enum class SyncAction { PLAY, PAUSE, SEEK, SKIP }
+    var syncInterceptor: ((SyncAction, Long) -> Boolean)? = null
+        // action -> seek position (only meaningful for SEEK)
+
     // ── 播放控制 ────────────────────────────────────────────────
 
     fun playPause() {
@@ -192,6 +197,8 @@ object MusicPlayerManager {
     }
 
     fun play() {
+        if (syncInterceptor?.invoke(SyncAction.PLAY, 0L) == true) return
+
         if (_playQueue.value.isEmpty()) return
         ensureServiceStarted()
         BassEngine.play()
@@ -203,6 +210,7 @@ object MusicPlayerManager {
     }
 
     fun pause() {
+        if (syncInterceptor?.invoke(SyncAction.PAUSE, 0L) == true) return
         BassEngine.pause()
         isPlaying = false
         stopProgressUpdates()
@@ -211,6 +219,7 @@ object MusicPlayerManager {
     }
 
     fun seekTo(position: Long) {
+        if (syncInterceptor?.invoke(SyncAction.SEEK, position) == true) return
         val ch = BassEngine.getChannelHandle()
         if (ch == 0) return
         if (!BassEngine.seekTo(position)) {
@@ -238,10 +247,12 @@ object MusicPlayerManager {
     // ── 曲目切换 ────────────────────────────────────────────────
 
     fun skipToNext() {
+        if (syncInterceptor?.invoke(SyncAction.SKIP, 0L) == true) return
         advanceToNext()
     }
 
     fun skipToPrevious() {
+        if (syncInterceptor?.invoke(SyncAction.SKIP, 0L) == true) return
         advanceToPrevious()
     }
 

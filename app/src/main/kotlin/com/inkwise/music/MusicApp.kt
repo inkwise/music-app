@@ -16,7 +16,10 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.inkwise.music.di.MusicAppEntryPoint
 import com.inkwise.music.player.MusicPlayerManager
+import com.inkwise.music.sync.SyncPlayManager
 import com.tencent.mmkv.MMKV
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 import dagger.hilt.EntryPoints
 import dagger.hilt.android.HiltAndroidApp
 import java.io.*
@@ -38,6 +41,15 @@ class MusicApp : Application() {
         coil.Coil.setImageLoader(entryPoint.imageLoader)
 
         MusicPlayerManager.init(this, entryPoint.prefsManager, entryPoint.audioEffectManager, entryPoint.streamCacheManager)
+
+        // 初始化同步播放管理器
+        val wsOkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .build()
+        SyncPlayManager.init(this, entryPoint.prefsManager, wsOkHttpClient)
+
         restoreSavedPlaybackState()
         entryPoint.fingerprintManager.startBackgroundScan()
         CrashHandler.instance.registerGlobal(this)

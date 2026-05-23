@@ -59,6 +59,7 @@ import com.inkwise.music.ui.main.navigationPage.home.PlaylistDetailScreen
 import com.inkwise.music.ui.main.navigationPage.local.LocalSongsScreen
 import com.inkwise.music.ui.main.navigationPage.search.SearchScreen
 import com.inkwise.music.ui.main.navigationPage.settings.SettingsScreen
+import com.inkwise.music.ui.main.navigationPage.settings.SyncPlaySettingsScreen
 import com.inkwise.music.ui.theme.LocalAppDimens
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -178,6 +179,7 @@ fun NavigationContent(
                     route == "ui-settings" -> "UI 设置"
                     route == "playback-settings" -> "播放设置"
                     route == "audio-effect-settings" -> "音效设置"
+                    route == "sync-settings" -> "同步播放"
                     route == "login" -> "登录"
                     route == "register" -> "注册"
                     route == "profile" -> "用户资料"
@@ -295,6 +297,7 @@ fun NavigationContent(
                             onNavigateToUI = { navController.navigate("ui-settings") },
                             onNavigateToPlayback = { navController.navigate("playback-settings") },
                             onNavigateToAudioEffect = { navController.navigate("audio-effect-settings") },
+                            onNavigateToSyncPlay = { navController.navigate("sync-settings") },
                         )
                     }
                     composable(
@@ -323,6 +326,15 @@ fun NavigationContent(
                         popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) },
                     ) {
                         com.inkwise.music.ui.main.navigationPage.settings.AudioEffectSettingsScreen()
+                    }
+                    composable(
+                        route = "sync-settings",
+                        enterTransition = { slideInHorizontally(initialOffsetX = { it }) },
+                        exitTransition = { slideOutHorizontally(targetOffsetX = { -it }) },
+                        popEnterTransition = { slideInHorizontally(initialOffsetX = { -it }) },
+                        popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) },
+                    ) {
+                        SyncPlaySettingsScreen()
                     }
                     composable(
                         "login",

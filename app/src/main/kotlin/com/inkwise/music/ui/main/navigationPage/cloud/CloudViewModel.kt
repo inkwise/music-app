@@ -490,7 +490,7 @@ class CloudViewModel @Inject constructor(
         item: com.inkwise.music.data.network.model.MusicItem,
         serverUrl: String
     ): Song {
-        val baseUrl = serverUrl.removeSuffix("/api/v1")
+        val baseUrl = serverUrl
 
         val streamPath = item.stream_url ?: ""
         val fullStreamUrl = if (streamPath.startsWith("http")) {

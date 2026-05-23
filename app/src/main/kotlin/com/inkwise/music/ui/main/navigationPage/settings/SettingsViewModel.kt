@@ -69,7 +69,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, message = "正在验证服务器...", isError = false)
             try {
-                val healthUrl = url.replace("/api/v1", "") + "/health"
+                val healthUrl = url + "/health"
                 val client = OkHttpClient.Builder()
                     .connectTimeout(5, TimeUnit.SECONDS)
                     .readTimeout(5, TimeUnit.SECONDS)

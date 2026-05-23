@@ -32,7 +32,7 @@ object NetworkModule {
             val currentUrl = runBlocking { prefs.serverUrl.first() }
             val newUrl = original.url.toString().replace(
                 "http://localhost/",
-                currentUrl.trimEnd('/') + "/"
+                currentUrl.trimEnd('/') + "/api/v1/"
             )
             chain.proceed(
                 original.newBuilder()

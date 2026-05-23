@@ -62,7 +62,7 @@ fun SettingsScreen(
                     value = uiState.serverUrl,
                     onValueChange = { viewModel.onServerUrlChanged(it) },
                     label = { Text("服务器地址") },
-                    placeholder = { Text("例如: http://192.168.1.100:8080/api/v1") },
+                    placeholder = { Text("例如: http://192.168.1.100:8080") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )

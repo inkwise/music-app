@@ -75,7 +75,7 @@ class SyncWsClient(
         _connectionState.value = ConnectionState.CONNECTING
 
         val httpUrl = kotlinx.coroutines.runBlocking { prefs.serverUrl.first() }
-            .ifBlank { "http://127.0.0.1:8080/api/v1" }
+            .ifBlank { "http://127.0.0.1:8080" }
 
         val wsHost = httpUrl
             .removePrefix("https://")

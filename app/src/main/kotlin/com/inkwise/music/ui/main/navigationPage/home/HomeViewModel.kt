@@ -114,7 +114,7 @@ class HomeViewModel @Inject constructor(
             pageSize = 200
         )
         if (response.isSuccessful && response.body() != null) {
-            val baseUrl = serverUrl.removeSuffix("/api/v1")
+            val baseUrl = serverUrl
             for (item in response.body()!!.data) {
                 val existing = songDao.getSongByCloudId(item.id)
                 val song = mapCloudSong(item, baseUrl)

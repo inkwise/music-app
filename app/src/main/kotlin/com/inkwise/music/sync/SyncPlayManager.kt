@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -399,7 +400,8 @@ object SyncPlayManager {
         val queue = MusicPlayerManager.playQueue.value
         val song = queue.find { (it.cloudId ?: it.id) == songId } ?: queue.firstOrNull() ?: return
 
-        val streamUrl = "http://127.0.0.1:8080/api/v1/music/${song.cloudId ?: song.id}/stream"
+        val baseUrl = kotlinx.coroutines.runBlocking { prefs?.serverUrl?.first() ?: "http://127.0.0.1:8080" }
+        val streamUrl = "$baseUrl/api/v1/music/${song.cloudId ?: song.id}/stream"
 
         try {
             BassEngine.load(streamUrl, useTempo = true)

@@ -1,59 +1,47 @@
-# Gradle files
+# Gradle
 .gradle/
 build/
 .kotlin/
-# Local configuration file (sdk path, etc)
 local.properties
 
-# Log/OS Files
-*.log
+# IDE
+.idea/
+*.iml
+misc.xml
+deploymentTargetDropDown.xml
+render.experimental.xml
 
-# Android Studio generated files and folders
+# Android
 captures/
 .externalNativeBuild/
 .cxx/
 *.aab
 *.apk
 output-metadata.json
-
-# IntelliJ
-*.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
-
-
-# Google Services (e.g. APIs or Firebase)
-google-services.json
-
-# Android Profiling
 *.hprof
 
-.claude
-CLAUDE.md
-*.sh__cmake_systeminformation/
+# Google Services
+google-services.json
 
-
-# 构建临时文件
+# Build artifacts
 __cmake_systeminformation/
 build_log*.txt
 native/
 
-# 本地环境配置
-.env
-.env.local
-
-# 编译产物
+# Compiled binaries
 *.so
 *.dll
 *.dylib
 *.class
 *.o
 
-# IDE 配置
-.idea/
-*.iml
-.gradle/
-build/
-EOF
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Claude
+.claude
+CLAUDE.md

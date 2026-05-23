@@ -33,3 +33,27 @@ google-services.json
 .claude
 CLAUDE.md
 *.sh__cmake_systeminformation/
+
+
+# 构建临时文件
+__cmake_systeminformation/
+build_log*.txt
+native/
+
+# 本地环境配置
+.env
+.env.local
+
+# 编译产物
+*.so
+*.dll
+*.dylib
+*.class
+*.o
+
+# IDE 配置
+.idea/
+*.iml
+.gradle/
+build/
+EOF

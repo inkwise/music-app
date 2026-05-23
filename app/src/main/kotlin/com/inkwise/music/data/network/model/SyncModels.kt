@@ -7,7 +7,9 @@ import com.google.gson.annotations.SerializedName
 data class RegisterDeviceRequest(
     @SerializedName("device_id") val deviceId: String,
     @SerializedName("device_name") val deviceName: String,
-    @SerializedName("device_type") val deviceType: String = "android"
+    @SerializedName("device_type") val deviceType: String = "android",
+    val role: String? = null,
+    @SerializedName("sync_enabled") val syncEnabled: Boolean? = null
 )
 
 data class ToggleSlaveRequest(
@@ -32,7 +34,9 @@ data class SyncDeviceInfo(
     @SerializedName("device_id") val deviceId: String,
     @SerializedName("device_name") val deviceName: String = "",
     val role: String = "slave",
-    @SerializedName("sync_enabled") val syncEnabled: Boolean = true
+    @SerializedName("sync_enabled") val syncEnabled: Boolean = true,
+    @SerializedName("is_online") val isOnline: Boolean = false,
+    @SerializedName("last_seen") val lastSeen: String? = null
 )
 
 data class SyncStatusResponse(

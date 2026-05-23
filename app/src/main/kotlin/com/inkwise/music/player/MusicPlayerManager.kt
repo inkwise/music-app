@@ -128,6 +128,8 @@ object MusicPlayerManager {
     // 当前正在播放的歌曲（用于后台缓存下载）
     private var currentSongForCache: Song? = null
 
+    private var loadJob: Job? = null
+
     private fun loadCurrentTrackIntoBass() {
         val queue = _playQueue.value
         val song = queue.getOrNull(_currentIndex.value) ?: return
@@ -145,19 +147,26 @@ object MusicPlayerManager {
         val floatEnabled = fx?.isFloatDecodeEnabled ?: false
         val tempoNeeded = true
         val flags = if (floatEnabled) BASS.BASS_SAMPLE_FLOAT else 0
-        val ok = BassEngine.load(resolvedUri, flags, useTempo = tempoNeeded)
-        if (ok) {
-            fx?.onChannelReady()
-            if (pendingSeekPosition > 0) {
-                BassEngine.seekTo(pendingSeekPosition)
-                pendingSeekPosition = -1L
+
+        // 在后台线程加载网络流，避免阻塞 UI
+        loadJob?.cancel()
+        loadJob = scope.launch(Dispatchers.IO) {
+            val ok = BassEngine.load(resolvedUri, flags, useTempo = tempoNeeded)
+            launch(Dispatchers.Main) {
+                if (ok) {
+                    fx?.onChannelReady()
+                    if (pendingSeekPosition > 0) {
+                        BassEngine.seekTo(pendingSeekPosition)
+                        pendingSeekPosition = -1L
+                    }
+                    if (isPlaying) {
+                        BassEngine.play()
+                    }
+                    triggerBackgroundCache()
+                }
+                updatePlaybackState()
             }
-            if (isPlaying) {
-                BassEngine.play()
-            }
-            triggerBackgroundCache()
         }
-        updatePlaybackState()
     }
 
     /** 解析播放 URI：边听边存开启时优先使用本地缓存文件 */
@@ -201,8 +210,11 @@ object MusicPlayerManager {
 
         if (_playQueue.value.isEmpty()) return
         ensureServiceStarted()
-        BassEngine.play()
         isPlaying = true
+        // 如果正在后台加载网络流，等加载完成由回调触发播放
+        if (loadJob?.isActive != true) {
+            BassEngine.play()
+        }
         startProgressUpdates()
         BeatDetector.start()
         triggerBackgroundCache()
@@ -265,7 +277,7 @@ object MusicPlayerManager {
         }
         loadCurrentTrackIntoBass()
         if (isPlaying) {
-            BassEngine.play()
+            if (loadJob?.isActive != true) BassEngine.play()
             startProgressUpdates()
         }
         updatePlaybackState()
@@ -281,7 +293,7 @@ object MusicPlayerManager {
         }
         loadCurrentTrackIntoBass()
         if (isPlaying) {
-            BassEngine.play()
+            if (loadJob?.isActive != true) BassEngine.play()
             startProgressUpdates()
         }
         updatePlaybackState()
@@ -297,7 +309,7 @@ object MusicPlayerManager {
         }
         loadCurrentTrackIntoBass()
         if (isPlaying) {
-            BassEngine.play()
+            if (loadJob?.isActive != true) BassEngine.play()
             startProgressUpdates()
         }
         updatePlaybackState()

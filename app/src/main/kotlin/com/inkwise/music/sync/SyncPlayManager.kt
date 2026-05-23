@@ -79,14 +79,15 @@ object SyncPlayManager {
 
     // ── 注册设备 ──
 
-    suspend fun registerDevice(api: ApiService, authToken: String, prefs: PreferencesManager) {
+    suspend fun registerDevice(api: ApiService, authToken: String, prefs: PreferencesManager, role: Role = Role.NONE) {
         try {
             val deviceId = prefs.getDeviceId()
             val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
             api.registerDevice(authToken, RegisterDeviceRequest(
                 deviceId = deviceId,
                 deviceName = deviceName,
-                deviceType = "android"
+                deviceType = "android",
+                role = if (role != Role.NONE) role.name.lowercase() else null
             ))
         } catch (e: Exception) {
             Log.w(TAG, "Device registration failed: ${e.message}")
@@ -104,8 +105,8 @@ object SyncPlayManager {
         val deviceId = p.getDeviceId()
         val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
 
-        // 注册设备并连接 WebSocket
-        registerDevice(api, authToken, p)
+        // 注册设备（含角色）并连接 WebSocket
+        registerDevice(api, authToken, p, r)
         wsClient?.connect(jwtToken, deviceId, deviceName)
 
         // 等待 WS 连接建立
@@ -115,6 +116,9 @@ object SyncPlayManager {
         wsClient?.send(SyncMessage(type = "set_role", payload = mapOf("role" to r.name.lowercase())))
 
         _role.value = r
+
+        // 通用消息处理：监听角色变更
+        startRoleChangeHandler()
 
         // 从机：启动消息处理
         if (r == Role.SLAVE) {
@@ -136,6 +140,10 @@ object SyncPlayManager {
         _connected.value = false
         wsClient?.disconnect()
         Log.d(TAG, "Sync disabled")
+    }
+
+    fun setRole(role: Role) {
+        _role.value = role
     }
 
     // ── 主机操作 ──
@@ -265,6 +273,29 @@ object SyncPlayManager {
                 type = "toggle_slave",
                 payload = mapOf("device_id" to deviceId, "enabled" to enabled)
             ))
+        }
+    }
+
+    // ── 通用消息处理 ──
+
+    private fun startRoleChangeHandler() {
+        val ws = wsClient ?: return
+        scope.launch {
+            ws.messages.collect { msg ->
+                when (msg.type) {
+                    "role_changed" -> {
+                        val payload = msg.payload ?: return@collect
+                        val deviceId = payload["device_id"] as? String ?: return@collect
+                        val role = payload["role"] as? String ?: return@collect
+                        Log.d(TAG, "Role changed: $deviceId -> $role")
+                        // 如果是本设备被降级为从机
+                        if (deviceId == prefs?.getDeviceId() && role == "slave") {
+                            _role.value = Role.SLAVE
+                            startSlaveMessageHandler()
+                        }
+                    }
+                }
+            }
         }
     }
 

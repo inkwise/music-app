@@ -9,6 +9,7 @@ import com.inkwise.music.data.prefs.PreferencesManager
 import com.inkwise.music.sync.SyncPlayManager
 import com.inkwise.music.sync.SyncPlayManager.Role
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,6 +48,7 @@ class SyncPlayViewModel @Inject constructor(
             deviceName = deviceName
         )
 
+        // 监听 SyncPlayManager 状态
         viewModelScope.launch {
             SyncPlayManager.role.collect { role ->
                 _uiState.value = _uiState.value.copy(role = role)
@@ -64,6 +66,7 @@ class SyncPlayViewModel @Inject constructor(
             }
         }
 
+        // 初始加载设备列表
         viewModelScope.launch {
             val token = prefs.authToken.first()
             if (!token.isNullOrBlank()) loadSyncStatus()
@@ -77,23 +80,63 @@ class SyncPlayViewModel @Inject constructor(
                 val response = api.getSyncStatus(token)
                 if (response.isSuccessful) {
                     val body = response.body()
+                    val devices = body?.devices ?: emptyList()
+                    val hostId = body?.hostDeviceId
                     _uiState.value = _uiState.value.copy(
-                        syncDevices = body?.devices ?: emptyList(),
-                        hostDeviceId = body?.hostDeviceId
+                        syncDevices = devices,
+                        hostDeviceId = hostId
                     )
+
+                    // 根据服务器返回更新本机角色
+                    val myId = prefs.getDeviceId()
+                    val myDevice = devices.find { it.deviceId == myId }
+                    val myRole = myDevice?.role ?: "slave"
+                    if (myRole == "host") {
+                        SyncPlayManager.setRole(Role.HOST)
+                    } else if (myRole == "slave" && SyncPlayManager.role.value != Role.NONE) {
+                        SyncPlayManager.setRole(Role.SLAVE)
+                    }
                 }
             } catch (_: Exception) {}
         }
     }
 
-    fun enableSync(role: Role) {
+    fun enableSyncAsHost() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, message = null)
             try {
                 val token = "Bearer ${prefs.authToken.first() ?: return@launch}"
-                val result = SyncPlayManager.enableSync(api, token, prefs, role)
+                val result = SyncPlayManager.enableSync(api, token, prefs, Role.HOST)
                 result.onSuccess {
                     _uiState.value = _uiState.value.copy(isLoading = false)
+                    delay(300)
+                    loadSyncStatus()
+                }.onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        message = e.message,
+                        isError = true
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    message = "启用同步失败: ${e.message}",
+                    isError = true
+                )
+            }
+        }
+    }
+
+    fun enableSyncAsSlave() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, message = null)
+            try {
+                val token = "Bearer ${prefs.authToken.first() ?: return@launch}"
+                val result = SyncPlayManager.enableSync(api, token, prefs, Role.SLAVE)
+                result.onSuccess {
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    delay(300)
                     loadSyncStatus()
                 }.onFailure { e ->
                     _uiState.value = _uiState.value.copy(
@@ -114,10 +157,8 @@ class SyncPlayViewModel @Inject constructor(
 
     fun disableSync() {
         SyncPlayManager.disableSync()
-        _uiState.value = _uiState.value.copy(
-            syncDevices = emptyList(),
-            hostDeviceId = null
-        )
+        _uiState.value = _uiState.value.copy(syncDevices = emptyList(), hostDeviceId = null)
+        viewModelScope.launch { loadSyncStatus() }
     }
 
     fun toggleSync(enable: Boolean) {

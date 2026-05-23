@@ -208,10 +208,10 @@ fun playerScreen(
                                 Brush.verticalGradient(
                                     colors =
                                         listOf(
-                                            Color.Black.copy(alpha = 0.18f),
+                                            Color.Black.copy(alpha = 0.38f),
                                             Color.Transparent,
                                             Color.Transparent,
-                                            Color.Black.copy(alpha = 0.10f),
+                                            Color.Black.copy(alpha = 0.30f),
                                         ),
                                 ),
                             ),

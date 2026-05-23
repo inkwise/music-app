@@ -3,6 +3,8 @@ package com.inkwise.music.ui.main
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
@@ -32,15 +34,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -52,6 +51,7 @@ import com.inkwise.music.ui.main.navigationPage.auth.LoginScreen
 import com.inkwise.music.ui.main.navigationPage.auth.RegisterScreen
 import com.inkwise.music.ui.main.navigationPage.auth.UserProfileScreen
 import com.inkwise.music.ui.main.navigationPage.cloud.CloudSongsScreen
+import com.inkwise.music.ui.main.navigationPage.components.EditSongScreen
 import com.inkwise.music.ui.main.navigationPage.home.AlbumDetailScreen
 import com.inkwise.music.ui.main.navigationPage.home.ArtistDetailScreen
 import com.inkwise.music.ui.main.navigationPage.home.HomeScreen
@@ -121,6 +121,14 @@ fun NavigationContent(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.navigateToEditSongEvents.collect { songId ->
+            navController.navigate("edit_song/$songId")
+            pagerState.scrollToPage(0)
+            sheetState.partialExpand()
+        }
+    }
+
     LaunchedEffect(uiState.sidebarOpen) {
         if (uiState.sidebarOpen) {
             drawerState.open()
@@ -135,14 +143,6 @@ fun NavigationContent(
         }
     }
 
-    // 导航切换后短暂拦截触摸事件，防止鬼点击
-    var blockTouch by remember { androidx.compose.runtime.mutableStateOf(false) }
-    LaunchedEffect(navController.currentBackStackEntry?.destination?.route) {
-        blockTouch = true
-        delay(300)
-        blockTouch = false
-    }
-
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -152,7 +152,12 @@ fun NavigationContent(
                 SidebarContent(
                     onNavigate = { route ->
                         navController.navigate(route) {
-                            launchSingleTop = true
+                            if (route in setOf("home", "local", "cloud", "settings")) {
+                                popUpTo("home") { inclusive = false }
+                                launchSingleTop = true
+                            } else {
+                                launchSingleTop = true
+                            }
                         }
                         viewModel.closeSidebar()
                     },
@@ -180,6 +185,7 @@ fun NavigationContent(
                     route.startsWith("artist/") -> "" // 艺术家详情有自己的标题
                     route.startsWith("album/") -> "" // 专辑详情有自己的标题
                     route.startsWith("playlist/") -> "" // 歌单详情有自己的标题
+                    route.startsWith("edit_song/") -> "编辑歌曲信息"
                     else -> ""
                 }
                 TopAppBar(
@@ -217,16 +223,6 @@ fun NavigationContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(
-                        // 导航切换后短暂拦截触摸，防止鬼点击
-                        if (blockTouch) Modifier.pointerInput(Unit) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    awaitPointerEvent().changes.forEach { it.consume() }
-                                }
-                            }
-                        } else Modifier
-                    )
                     .padding(top = padding.calculateTopPadding()),
             ) {
                 NavHost(
@@ -234,7 +230,13 @@ fun NavigationContent(
                     startDestination = "home",
                     modifier = Modifier.padding(bottom = peekHeight),
                 ) {
-                    composable("search") {
+                    composable(
+                        "search",
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
+                    ) {
                         SearchScreen(
                             onNavigateToCloud = {
                                 navController.navigate("cloud") {
@@ -249,7 +251,13 @@ fun NavigationContent(
                             }
                         )
                     }
-                    composable("home") {
+                    composable(
+                        "home",
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
+                    ) {
                         HomeScreen(
                             onNavigateToLocal = { navController.navigate("local") },
                             onNavigateToCloud = { navController.navigate("cloud") },
@@ -258,13 +266,31 @@ fun NavigationContent(
                             }
                         )
                     }
-                    composable("local") {
+                    composable(
+                        "local",
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
+                    ) {
                         LocalSongsScreen(mainViewModel = viewModel)
                     }
-                    composable("cloud") {
+                    composable(
+                        "cloud",
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
+                    ) {
                         CloudSongsScreen(mainViewModel = viewModel)
                     }
-                    composable("settings") {
+                    composable(
+                        "settings",
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
+                    ) {
                         SettingsScreen(
                             onNavigateToUI = { navController.navigate("ui-settings") },
                             onNavigateToPlayback = { navController.navigate("playback-settings") },
@@ -298,7 +324,13 @@ fun NavigationContent(
                     ) {
                         com.inkwise.music.ui.main.navigationPage.settings.AudioEffectSettingsScreen()
                     }
-                    composable("login") {
+                    composable(
+                        "login",
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
+                    ) {
                         LoginScreen(
                             onNavigateToRegister = {
                                 navController.navigate("register") {
@@ -312,7 +344,13 @@ fun NavigationContent(
                             }
                         )
                     }
-                    composable("register") {
+                    composable(
+                        "register",
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
+                    ) {
                         RegisterScreen(
                             onNavigateToLogin = {
                                 navController.popBackStack()
@@ -324,7 +362,13 @@ fun NavigationContent(
                             }
                         )
                     }
-                    composable("profile") {
+                    composable(
+                        "profile",
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
+                    ) {
                         UserProfileScreen(
                             onLogout = {
                                 navController.navigate("home") {
@@ -337,7 +381,11 @@ fun NavigationContent(
                         route = "playlist/{playlistId}",
                         arguments = listOf(
                             navArgument("playlistId") { type = NavType.LongType }
-                        )
+                        ),
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
                     ) {
                         PlaylistDetailScreen(mainViewModel = viewModel)
                     }
@@ -345,7 +393,11 @@ fun NavigationContent(
                         route = "artist/{artistId}",
                         arguments = listOf(
                             navArgument("artistId") { type = NavType.LongType }
-                        )
+                        ),
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
                     ) {
                         ArtistDetailScreen(mainViewModel = viewModel)
                     }
@@ -353,7 +405,11 @@ fun NavigationContent(
                         route = "artist/by-name/{artistName}",
                         arguments = listOf(
                             navArgument("artistName") { type = NavType.StringType }
-                        )
+                        ),
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
                     ) {
                         ArtistDetailScreen(mainViewModel = viewModel)
                     }
@@ -361,9 +417,27 @@ fun NavigationContent(
                         route = "album/{albumName}",
                         arguments = listOf(
                             navArgument("albumName") { type = NavType.StringType }
-                        )
+                        ),
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None },
                     ) {
                         AlbumDetailScreen(mainViewModel = viewModel)
+                    }
+                    composable(
+                        route = "edit_song/{songId}",
+                        arguments = listOf(
+                            navArgument("songId") { type = NavType.LongType }
+                        ),
+                        enterTransition = { slideInHorizontally(initialOffsetX = { it }) },
+                        exitTransition = { slideOutHorizontally(targetOffsetX = { -it }) },
+                        popEnterTransition = { slideInHorizontally(initialOffsetX = { -it }) },
+                        popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) },
+                    ) {
+                        EditSongScreen(
+                            onNavigateBack = { navController.popBackStack() }
+                        )
                     }
                 }
 

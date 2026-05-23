@@ -168,10 +168,6 @@ fun ArtistDetailScreen(
                                     onClick = { playerViewModel.playSongs(uiState.songs, index) },
                                     addToQueue = { playerViewModel.addToQueue(song) },
                                     onMoreClick = { actionSong = song },
-                                    onArtistClick = { mainViewModel.navigateToArtist(it) },
-                                    onArtistNameClick = if (song.artistIds.isEmpty()) {
-                                        { name: String -> mainViewModel.navigateToArtistByName(name) }
-                                    } else null
                                 )
                             }
                         }
@@ -193,9 +189,7 @@ fun ArtistDetailScreen(
             onDelete = {},
             onAddToPlaylist = {},
             onRemoveFromPlaylist = {},
-            onArtistClick = { mainViewModel.navigateToArtist(it) },
             onAlbumClick = { mainViewModel.navigateToAlbum(it) },
-            onArtistNameClick = { mainViewModel.navigateToArtistByName(it) }
         )
     }
 
@@ -205,7 +199,6 @@ fun ArtistDetailScreen(
             song = song,
             fingerprint = null,
             onDismiss = { infoSong = null },
-            onArtistClick = { mainViewModel.navigateToArtist(it) }
         )
     }
 }

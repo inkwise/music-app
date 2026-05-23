@@ -52,7 +52,7 @@ class AlbumDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
-            val persistedMatches = downloadMatchDao.getValidMatchedCloudIds()
+            val downloadMatchMap = buildDownloadMatchMap()
 
             // 加载本地同专辑歌曲
             val localSongs = songDao.getLocalSongsByAlbum(albumName).first()
@@ -79,7 +79,7 @@ class AlbumDetailViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     val cloudSongs = result.data.musics.map { mapToSong(it, serverUrl) }
                     val cloudCover = resolveCoverUrl(result.data.cover_url, serverUrl)
-                    val mergedSongs = mergeSongs(localSongs, cloudSongs, persistedMatches.toSet())
+                    val mergedSongs = mergeSongs(localSongs, cloudSongs, downloadMatchMap)
 
                     _uiState.value = _uiState.value.copy(
                         albumName = albumName,
@@ -93,7 +93,7 @@ class AlbumDetailViewModel @Inject constructor(
                     // API 失败，用本地数据
                     val cloudSongs = songDao.getSongsByAlbum(albumName).first()
                         .filter { !it.isLocal }
-                    val mergedSongs = mergeSongs(localSongs, cloudSongs, persistedMatches.toSet())
+                    val mergedSongs = mergeSongs(localSongs, cloudSongs, downloadMatchMap)
 
                     _uiState.value = _uiState.value.copy(
                         albumName = albumName,
@@ -109,20 +109,22 @@ class AlbumDetailViewModel @Inject constructor(
 
     fun refresh() = loadAlbumDetail()
 
-    private fun mergeSongs(local: List<Song>, cloud: List<Song>, matchedIds: Set<Long>): List<Song> {
-        val localByCloudId = local.filter { it.cloudId != null }.associateBy { it.cloudId }
+    private fun mergeSongs(local: List<Song>, cloud: List<Song>, downloadMatchMap: Map<Long, Long>): List<Song> {
+        val localById = local.associateBy { it.id }
+        val matchedLocalIds = mutableSetOf<Long>()
         val result = mutableListOf<Song>()
 
         for (cloudSong in cloud) {
-            val localMatch = cloudSong.cloudId?.let { localByCloudId[it] }
-            if (localMatch != null) {
-                result.add(localMatch)
+            val localSongId = cloudSong.cloudId?.let { downloadMatchMap[it] }
+            val localSong = localSongId?.let { localById[it] }
+            if (localSong != null) {
+                result.add(localSong)
+                matchedLocalIds.add(localSong.id)
             } else {
                 result.add(cloudSong)
             }
         }
 
-        val matchedLocalIds = local.filter { it.cloudId in localByCloudId.keys }.map { it.id }.toSet()
         for (localSong in local) {
             if (localSong.id !in matchedLocalIds) {
                 result.add(localSong)
@@ -130,6 +132,10 @@ class AlbumDetailViewModel @Inject constructor(
         }
 
         return result.distinctBy { it.id to it.cloudId }
+    }
+
+    private suspend fun buildDownloadMatchMap(): Map<Long, Long> {
+        return downloadMatchDao.getAllMatches().associate { it.cloudMusicId to it.localSongId }
     }
 
     private fun resolveCoverUrl(coverUrl: String?, serverUrl: String): String? {

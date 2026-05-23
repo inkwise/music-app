@@ -17,8 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.QueueMusic
@@ -61,6 +61,7 @@ fun SongActionSheet(
     onArtistClick: (Long) -> Unit = {},
     onAlbumClick: (String) -> Unit = {},
     onArtistNameClick: ((String) -> Unit)? = null,
+    onEditInfo: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
@@ -161,27 +162,6 @@ fun SongActionSheet(
                     }
                 )
 
-                // 查看歌手
-                if (song.artistIds.isNotEmpty()) {
-                    ActionRow(
-                        icon = Icons.Default.Person,
-                        text = "歌手: ${song.artist}",
-                        onClick = {
-                            onArtistClick(song.artistIds.first())
-                            scope.launch { sheetState.hide(); onDismiss() }
-                        }
-                    )
-                } else if (song.artist.isNotBlank() && onArtistNameClick != null) {
-                    ActionRow(
-                        icon = Icons.Default.Person,
-                        text = "歌手: ${song.artist}",
-                        onClick = {
-                            onArtistNameClick(song.artist)
-                            scope.launch { sheetState.hide(); onDismiss() }
-                        }
-                    )
-                }
-
                 // 查看专辑
                 if (song.album.isNotBlank()) {
                     ActionRow(
@@ -200,6 +180,19 @@ fun SongActionSheet(
                     text = "歌曲信息",
                     onClick = {
                         onShowInfo()
+                        scope.launch {
+                            sheetState.hide()
+                            onDismiss()
+                        }
+                    }
+                )
+
+                // 编辑歌曲信息
+                ActionRow(
+                    icon = Icons.Default.Edit,
+                    text = "编辑歌曲信息",
+                    onClick = {
+                        onEditInfo()
                         scope.launch {
                             sheetState.hide()
                             onDismiss()

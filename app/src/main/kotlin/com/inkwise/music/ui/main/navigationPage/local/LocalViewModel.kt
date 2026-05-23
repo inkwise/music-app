@@ -16,6 +16,7 @@ import com.inkwise.music.data.dao.SongDao
 import com.inkwise.music.data.model.Song
 import com.inkwise.music.data.prefs.PreferencesManager
 import com.inkwise.music.data.repository.MusicRepository
+import com.inkwise.music.player.MusicPlayerManager
 import com.inkwise.music.ui.main.navigationPage.components.SortMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -38,8 +39,15 @@ class LocalViewModel
         private val downloadMatchDao: DownloadMatchDao,
         private val prefs: PreferencesManager
     ) : ViewModel() {
+        companion object {
+            private var cachedSongs: List<Song>? = null
+        }
+
         private val _localSongs = MutableStateFlow<List<Song>>(emptyList())
         val localSongs: StateFlow<List<Song>> = _localSongs.asStateFlow()
+
+        private val _isLoading = MutableStateFlow(true)
+        val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
         private val _isScanning = MutableStateFlow(false)
         val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
@@ -54,6 +62,10 @@ class LocalViewModel
         private val _rawSongs = MutableStateFlow<List<Song>>(emptyList())
 
         init {
+            cachedSongs?.let {
+                _localSongs.value = it
+                _isLoading.value = false
+            }
             observeLocalSongs()
         }
 
@@ -67,6 +79,8 @@ class LocalViewModel
                     applySort(songs, mode)
                 }.collect { sorted ->
                     _localSongs.value = sorted
+                    _isLoading.value = false
+                    cachedSongs = sorted
                 }
             }
         }
@@ -113,6 +127,8 @@ class LocalViewModel
             }
 
         fun deleteSongsPermanently(songs: List<Song>, context: Context) {
+            // 如果删除的歌曲中包含当前正在播放的，先停止播放
+            MusicPlayerManager.stopIfCurrentSongDeleted(songs.map { it.id }.toSet())
             viewModelScope.launch(Dispatchers.IO) {
                 for (song in songs) {
                     try {
@@ -141,6 +157,8 @@ class LocalViewModel
 
         /** 扫描本地音乐并更新 _localSongs */
         fun deleteSong(song: Song) {
+            // 如果删除的是当前正在播放的歌曲，先停止播放
+            MusicPlayerManager.stopIfCurrentSongDeleted(setOf(song.id))
             viewModelScope.launch {
                 fingerprintDao.deleteBySongId(song.id)
                 downloadMatchDao.deleteByLocalSongId(song.id)

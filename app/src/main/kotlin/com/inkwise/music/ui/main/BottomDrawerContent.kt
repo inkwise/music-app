@@ -1,6 +1,7 @@
 package com.inkwise.music.ui.main
 
 import android.app.Activity
+import android.content.Intent
 import android.widget.ImageView
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -26,6 +27,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -129,6 +131,21 @@ fun BottomDrawerContent(
         }
     }
 
+    // 分享链接已创建，弹出系统分享
+    val shareLink by playerViewModel.shareLinkResult.collectAsState()
+    LaunchedEffect(shareLink) {
+        shareLink?.let { url ->
+            val sendIntent = Intent().apply {
+                action = Intent.ACTION_SEND
+                putExtra(Intent.EXTRA_TEXT, "分享一首歌给你: $url")
+                type = "text/plain"
+            }
+            val shareIntent = Intent.createChooser(sendIntent, "分享歌曲")
+            context.startActivity(shareIntent)
+            playerViewModel.clearShareLinkResult()
+        }
+    }
+
     Column(
         modifier =
             Modifier
@@ -139,41 +156,62 @@ fun BottomDrawerContent(
                 // .padding(bottom = 16.dp)
                 .padding(28.dp), // ,
     ) {
-        // ---------- 顶部：歌名 / 歌手 ----------
+        // ---------- 顶部：歌名/歌手 + 分享按钮 ----------
         if (!immersiveMode) {
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = currentSong?.title ?: "墨迹",
-                    color = animatedThemeColor,
-                    style =
-                        MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                        ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(4.dp))
-                currentSong?.let { song ->
-                    ArtistText(
-                        artist = song.artist,
-                        artistIds = song.artistIds,
-                        onArtistClick = { mainViewModel.navigateToArtist(it) },
+                // 标题 + 歌手（左侧，左对齐）
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    Text(
+                        text = currentSong?.title ?: "墨迹",
+                        color = animatedThemeColor,
+                        style =
+                            MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    currentSong?.let { song ->
+                        ArtistText(
+                            artist = song.artist,
+                            artistIds = song.artistIds,
+                            onArtistClick = { mainViewModel.navigateToArtist(it) },
+                            color = animatedThemeColor,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1
+                        )
+                    } ?: Text(
+                        text = "@inkwise",
                         color = animatedThemeColor,
                         style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                } ?: Text(
-                    text = "@inkwise",
-                    color = animatedThemeColor,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                // 分享按钮（右侧，仅云端歌曲显示）
+                if (currentSong?.cloudId != null) {
+                    IconButton(
+                        onClick = { playerViewModel.shareSong() },
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Share,
+                            contentDescription = "分享",
+                            tint = animatedThemeColor,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
             }
         }
 
@@ -303,15 +341,28 @@ fun BottomDrawerContent(
         // ---------- 进度条 ----------
         if (!immersiveMode) {
             Column(modifier = Modifier.padding(top = 4.dp)) {
+                // 拖动过程中暂存目标位置，松手后才真正 seek，避免高频 HTTP seek 导致 ANR
+                var dragFraction by remember { mutableStateOf<Float?>(null) }
+
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
                 Slider(
-                value =
-                    if (playbackState.duration > 0) {
+                value = dragFraction ?: if (playbackState.duration > 0) {
                         playbackState.currentPosition.toFloat() / playbackState.duration
                     } else {
                         0f
                     },
                 onValueChange = { progress ->
-                    playerViewModel.seekTo((progress * playbackState.duration).toLong())
+                    dragFraction = progress
+                },
+                onValueChangeFinished = {
+                    val target = dragFraction
+                    dragFraction = null
+                    if (target != null && playbackState.duration > 0) {
+                        playerViewModel.seekTo((target * playbackState.duration).toLong())
+                    }
                 },
                 // 1. 自定义颜色
                 colors =
@@ -342,6 +393,7 @@ fun BottomDrawerContent(
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+                }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

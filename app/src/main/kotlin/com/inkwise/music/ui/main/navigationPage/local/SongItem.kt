@@ -38,7 +38,7 @@ import coil.request.ImageRequest
 import coil.size.Precision
 import com.inkwise.music.R
 import com.inkwise.music.data.model.Song
-import com.inkwise.music.ui.main.navigationPage.components.ArtistText
+
 
 @Composable
 fun SongItem(
@@ -69,7 +69,7 @@ fun SongItem(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(2.dp),
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (multiSelectMode) {
@@ -139,11 +139,8 @@ fun SongItem(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    ArtistText(
-                        artist = song.artist,
-                        artistIds = song.artistIds,
-                        onArtistClick = onArtistClick,
-                        onArtistNameClick = onArtistNameClick,
+                    Text(
+                        text = song.artist,
                         style = MaterialTheme.typography.bodyMedium,
                         color =
                             if (isPlaying) {

@@ -214,3 +214,10 @@ data class UploadResult(
     val error: String?,
     val duplicate: Boolean = false
 )
+
+// 分享链接
+data class CreateShareLinkResponse(
+    val share_url: String,
+    val token: String,
+    val expires_at: String
+)

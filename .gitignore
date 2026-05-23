@@ -32,4 +32,4 @@ google-services.json
 
 .claude
 CLAUDE.md
-*.sh
+*.sh__cmake_systeminformation/

@@ -12,6 +12,9 @@ interface DownloadMatchDao {
     @Query("SELECT cloud_music_id FROM download_matches")
     suspend fun getAllMatchedCloudIds(): List<Long>
 
+    @Query("SELECT * FROM download_matches")
+    suspend fun getAllMatches(): List<DownloadMatchEntity>
+
     @Query("SELECT cloud_music_id FROM download_matches WHERE cloud_music_id = :cloudId LIMIT 1")
     suspend fun getMatchByCloudId(cloudId: Long): Long?
 

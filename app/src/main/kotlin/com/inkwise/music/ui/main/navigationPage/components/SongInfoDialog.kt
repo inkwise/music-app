@@ -34,7 +34,6 @@ fun SongInfoDialog(
     song: Song,
     fingerprint: String?,
     onDismiss: () -> Unit,
-    onArtistClick: (Long) -> Unit = {},
 ) {
     val context = LocalContext.current
 
@@ -55,10 +54,8 @@ fun SongInfoDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(0.35f)
                     )
-                    ArtistText(
-                        artist = song.artist,
-                        artistIds = song.artistIds,
-                        onArtistClick = onArtistClick,
+                    Text(
+                        text = song.artist,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(0.65f)
                     )

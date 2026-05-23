@@ -23,6 +23,12 @@ import com.inkwise.music.data.network.model.AlbumListResponse
 import com.inkwise.music.data.network.model.ArtistDetailResponse
 import com.inkwise.music.data.network.model.ReorderMusicRequest
 import com.inkwise.music.data.network.model.ReorderMusicResponse
+import com.inkwise.music.data.network.model.UpdateMusicRequest
+import com.inkwise.music.data.network.model.UpdateMusicResponse
+import com.inkwise.music.data.network.model.UpdateCoverResponse
+import com.inkwise.music.data.network.model.UpdateLyricsRequest
+import com.inkwise.music.data.network.model.UpdateLyricsResponse
+import com.inkwise.music.data.network.model.CreateShareLinkResponse
 import com.inkwise.music.data.network.model.SearchSuggestionsResponse
 import com.inkwise.music.data.network.model.ReorderPlaylistRequest
 import com.inkwise.music.data.network.model.ReorderPlaylistResponse
@@ -173,4 +179,38 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Part files: List<MultipartBody.Part>
     ): Response<BatchUploadResponse>
+
+    @PUT("/music/{id}")
+    suspend fun updateMusic(
+        @Header("Authorization") token: String,
+        @Path("id") musicId: Long,
+        @Body request: UpdateMusicRequest
+    ): Response<UpdateMusicResponse>
+
+    @Multipart
+    @PUT("/music/{id}/cover")
+    suspend fun updateCover(
+        @Header("Authorization") token: String,
+        @Path("id") musicId: Long,
+        @Part cover: MultipartBody.Part
+    ): Response<UpdateCoverResponse>
+
+    @PUT("/music/{id}/lyrics")
+    suspend fun updateLyrics(
+        @Header("Authorization") token: String,
+        @Path("id") musicId: Long,
+        @Body request: UpdateLyricsRequest
+    ): Response<UpdateLyricsResponse>
+
+    @POST("/music/{id}/share")
+    suspend fun createShareLink(
+        @Header("Authorization") token: String,
+        @Path("id") musicId: Long
+    ): Response<CreateShareLinkResponse>
+
+    @GET("/music/{id}/lyrics")
+    suspend fun getLyrics(
+        @Header("Authorization") token: String,
+        @Path("id") musicId: Long
+    ): Response<okhttp3.ResponseBody>
 }

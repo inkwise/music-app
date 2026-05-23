@@ -61,6 +61,13 @@ class MainViewModel
             _navigateToAlbumEvents.trySend(albumName)
         }
 
+        private val _navigateToEditSongEvents = Channel<Long>(Channel.BUFFERED)
+        val navigateToEditSongEvents = _navigateToEditSongEvents.receiveAsFlow()
+
+        fun navigateToEditSong(songId: Long) {
+            _navigateToEditSongEvents.trySend(songId)
+        }
+
         private val _uiState = MutableStateFlow(MainUiState())
         val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 

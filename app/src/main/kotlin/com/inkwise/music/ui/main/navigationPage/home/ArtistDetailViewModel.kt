@@ -59,7 +59,7 @@ class ArtistDetailViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             val loggedIn = prefs.isLoggedInNow()
-            val persistedMatches = downloadMatchDao.getValidMatchedCloudIds()
+            val downloadMatchMap = buildDownloadMatchMap()
 
             if (!loggedIn) {
                 // 离线：只加载本地数据
@@ -85,14 +85,14 @@ class ArtistDetailViewModel @Inject constructor(
                             local.artistIds.contains(artistId) || local.artist.contains(artist.name)
                         }
 
-                    val mergedSongs = mergeSongs(localSongs, cloudSongs, persistedMatches.toSet())
+                    val mergedSongs = mergeSongs(localSongs, cloudSongs, downloadMatchMap)
 
                     _uiState.value = _uiState.value.copy(
                         artistName = artist.name,
                         description = artist.description ?: "",
                         avatarUrl = resolveAvatarUrl(artist.avatar_url, serverUrl),
                         songs = mergedSongs,
-                        downloadedSongIds = persistedMatches.toSet(),
+                        downloadedSongIds = downloadMatchMap.keys,
                         isLoading = false,
                         error = null
                     )
@@ -109,11 +109,11 @@ class ArtistDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
-            val persistedMatches = downloadMatchDao.getValidMatchedCloudIds()
+            val downloadMatchMap = buildDownloadMatchMap()
             val loggedIn = prefs.isLoggedInNow()
 
             if (!loggedIn) {
-                loadLocalByName(artistName, persistedMatches.toSet())
+                loadLocalByName(artistName, downloadMatchMap)
                 return@launch
             }
 
@@ -129,19 +129,19 @@ class ArtistDetailViewModel @Inject constructor(
                     val artist = nameResult.data.artist
                     val cloudSongs = artist.musics?.map { mapToSong(it, serverUrl) } ?: emptyList()
                     val localSongs = songDao.getLocalSongsByArtistName(artistName).first()
-                    val mergedSongs = mergeSongs(localSongs, cloudSongs, persistedMatches.toSet())
+                    val mergedSongs = mergeSongs(localSongs, cloudSongs, downloadMatchMap)
 
                     _uiState.value = _uiState.value.copy(
                         artistName = artist.name,
                         description = artist.description ?: "",
                         avatarUrl = resolveAvatarUrl(artist.avatar_url, serverUrl),
                         songs = mergedSongs,
-                        downloadedSongIds = persistedMatches.toSet(),
+                        downloadedSongIds = downloadMatchMap.keys,
                         isLoading = false
                     )
                 }
                 is ApiResult.Error -> {
-                    loadLocalByName(artistName, persistedMatches.toSet())
+                    loadLocalByName(artistName, downloadMatchMap)
                 }
             }
         }
@@ -149,12 +149,12 @@ class ArtistDetailViewModel @Inject constructor(
 
     private suspend fun loadLocalOnly() {
         // 尝试按已知 artistId 查找对应的本地歌曲
-        val persistedMatches = downloadMatchDao.getValidMatchedCloudIds()
+        val downloadMatchMap = buildDownloadMatchMap()
         if (artistId > 0) {
             // 从已缓存的云端歌曲中查找艺术家名
             val cloudSong = songDao.getSongByCloudId(artistId)
             if (cloudSong != null) {
-                loadLocalByName(cloudSong.artist, persistedMatches.toSet())
+                loadLocalByName(cloudSong.artist, downloadMatchMap)
                 return
             }
             // artistId 可能是 artist entity ID, 不是 song cloudId
@@ -164,7 +164,7 @@ class ArtistDetailViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     artistName = localSongs.first().artist,
                     songs = localSongs,
-                    downloadedSongIds = localSongs.map { it.cloudId }.filterNotNull().toSet(),
+                    downloadedSongIds = downloadMatchMap.keys,
                     isLoading = false
                 )
                 return
@@ -176,16 +176,16 @@ class ArtistDetailViewModel @Inject constructor(
         )
     }
 
-    private suspend fun loadLocalByName(name: String, matchedIds: Set<Long>) {
+    private suspend fun loadLocalByName(name: String, downloadMatchMap: Map<Long, Long>) {
         val localSongs = songDao.getLocalSongsByArtistName(name).first()
         val cloudSongs = songDao.getCloudSongsByArtistName(name).first()
-        val mergedSongs = mergeSongs(localSongs, cloudSongs, matchedIds)
+        val mergedSongs = mergeSongs(localSongs, cloudSongs, downloadMatchMap)
 
         val firstSong = localSongs.firstOrNull() ?: cloudSongs.firstOrNull()
         _uiState.value = _uiState.value.copy(
             artistName = name,
             songs = mergedSongs,
-            downloadedSongIds = matchedIds,
+            downloadedSongIds = downloadMatchMap.keys,
             isLoading = false,
             avatarUrl = firstSong?.albumArt
         )
@@ -197,24 +197,25 @@ class ArtistDetailViewModel @Inject constructor(
     }
 
     /**
-     * 合并本地和云端歌曲，同 cloudId 的保留本地版本用于播放
+     * 合并本地和云端歌曲，通过 download_matches 表去重。
+     * downloadMatchMap: cloudMusicId → localSongId
      */
-    private fun mergeSongs(local: List<Song>, cloud: List<Song>, matchedIds: Set<Long>): List<Song> {
-        val localByCloudId = local.filter { it.cloudId != null }.associateBy { it.cloudId }
+    private fun mergeSongs(local: List<Song>, cloud: List<Song>, downloadMatchMap: Map<Long, Long>): List<Song> {
+        val localById = local.associateBy { it.id }
+        val matchedLocalIds = mutableSetOf<Long>()
         val result = mutableListOf<Song>()
 
-        // 云端歌曲：如果本地有匹配，用本地版本；否则用云端版本
         for (cloudSong in cloud) {
-            val localMatch = cloudSong.cloudId?.let { localByCloudId[it] }
-            if (localMatch != null) {
-                result.add(localMatch)
+            val localSongId = cloudSong.cloudId?.let { downloadMatchMap[it] }
+            val localSong = localSongId?.let { localById[it] }
+            if (localSong != null) {
+                result.add(localSong)
+                matchedLocalIds.add(localSong.id)
             } else {
                 result.add(cloudSong)
             }
         }
 
-        // 添加未匹配到云端的本地歌曲
-        val matchedLocalIds = local.filter { it.cloudId in localByCloudId.keys }.map { it.id }.toSet()
         for (localSong in local) {
             if (localSong.id !in matchedLocalIds) {
                 result.add(localSong)
@@ -222,6 +223,10 @@ class ArtistDetailViewModel @Inject constructor(
         }
 
         return result.distinctBy { it.id to it.cloudId }
+    }
+
+    private suspend fun buildDownloadMatchMap(): Map<Long, Long> {
+        return downloadMatchDao.getAllMatches().associate { it.cloudMusicId to it.localSongId }
     }
 
     private fun resolveAvatarUrl(avatarUrl: String?, serverUrl: String): String? {

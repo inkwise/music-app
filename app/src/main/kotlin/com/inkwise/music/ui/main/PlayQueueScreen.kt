@@ -87,9 +87,6 @@ fun PlayQueueBottomSheet(
                     onRemove = {
                         playerViewModel.removeFromQueue(index)
                     },
-                    onArtistClick = if (song.artistIds.isNotEmpty()) {
-                        { id -> mainViewModel.navigateToArtist(id) }
-                    } else null,
                 )
             }
         }

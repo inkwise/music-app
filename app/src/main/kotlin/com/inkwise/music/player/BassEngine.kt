@@ -177,12 +177,19 @@ object BassEngine {
         return (secs * 1000).toLong()
     }
 
-    /** Seek to position in milliseconds. */
-    fun seekTo(positionMs: Long) {
+    /** Seek to position in milliseconds. Returns true on success. */
+    fun seekTo(positionMs: Long): Boolean {
         val ch = activeChannel
-        if (ch == 0) return
+        if (ch == 0) return false
         val bytes = BASS.BASS_ChannelSeconds2Bytes(ch, positionMs / 1000.0)
-        BASS.BASS_ChannelSetPosition(ch, bytes, BASS.BASS_POS_BYTE)
+        val ok = BASS.BASS_ChannelSetPosition(ch, bytes, BASS.BASS_POS_BYTE)
+        if (!ok) {
+            val err = BASS.BASS_ErrorGetCode()
+            if (err != BASS.BASS_OK) {
+                Log.w(TAG, "seekTo 失败: error=$err positionMs=$positionMs")
+            }
+        }
+        return ok
     }
 
     /** Get the current BASS channel handle (for effects). */

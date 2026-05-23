@@ -24,7 +24,7 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(prefs: PreferencesManager): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.HEADERS
         }
 
         val urlRewriteInterceptor = Interceptor { chain ->

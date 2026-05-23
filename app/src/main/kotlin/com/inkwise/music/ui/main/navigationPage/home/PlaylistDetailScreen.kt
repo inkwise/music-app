@@ -182,7 +182,11 @@ fun PlaylistDetailScreen(
             modifier = Modifier.weight(1f),
             state = pullToRefreshState,
         ) {
-        if (uiState.songs.isEmpty()) {
+        if (uiState.isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator()
+            }
+        } else if (uiState.songs.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("歌单为空", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -195,10 +199,6 @@ fun PlaylistDetailScreen(
                         onClick = { playerViewModel.playSongs(uiState.songs, index) },
                         addToQueue = { playerViewModel.addToQueue(song) },
                         onMoreClick = { actionSong = song },
-                        onArtistClick = { mainViewModel.navigateToArtist(it) },
-                        onArtistNameClick = if (song.artistIds.isEmpty()) {
-                            { name: String -> mainViewModel.navigateToArtistByName(name) }
-                        } else null,
                         multiSelectMode = multiSelectMode,
                         isSelected = song.id in selectedIds,
                         onToggleSelect = {
@@ -276,6 +276,7 @@ fun PlaylistDetailScreen(
             onShowInfo = {
                 infoSong = song
             },
+            onEditInfo = { mainViewModel.navigateToEditSong(song.id) },
             onDelete = {
                 detailViewModel.deleteSong(song)
                 Toast.makeText(context, "已删除: ${song.title}", Toast.LENGTH_SHORT).show()
@@ -288,9 +289,7 @@ fun PlaylistDetailScreen(
                 detailViewModel.removeSongFromPlaylist(song.id)
                 Toast.makeText(context, "已从歌单中移除", Toast.LENGTH_SHORT).show()
             },
-            onArtistClick = { mainViewModel.navigateToArtist(it) },
             onAlbumClick = { mainViewModel.navigateToAlbum(it) },
-            onArtistNameClick = { mainViewModel.navigateToArtistByName(it) }
         )
     }
 
@@ -300,7 +299,6 @@ fun PlaylistDetailScreen(
             song = song,
             fingerprint = null,
             onDismiss = { infoSong = null },
-            onArtistClick = { mainViewModel.navigateToArtist(it) }
         )
     }
 }

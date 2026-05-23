@@ -2,6 +2,7 @@ package com.inkwise.music.player
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.un4seen.bass.BASS
 import com.inkwise.music.audio.BeatDetector
 import com.inkwise.music.data.audio.AudioEffectManager
@@ -97,6 +98,15 @@ object MusicPlayerManager {
         _currentIndex.value = startIndex.coerceIn(0, (songs.size - 1).coerceAtLeast(0))
         rebuildShuffleOrder(currentTrackFirst = true)
         loadCurrentTrackIntoBass()
+    }
+
+    fun updateSong(song: Song) {
+        val queue = _playQueue.value.toMutableList()
+        val idx = queue.indexOfFirst { it.id == song.id }
+        if (idx >= 0) {
+            queue[idx] = song
+            _playQueue.value = queue
+        }
     }
 
     private fun rebuildShuffleOrder(currentTrackFirst: Boolean = false) {
@@ -201,8 +211,28 @@ object MusicPlayerManager {
     }
 
     fun seekTo(position: Long) {
-        BassEngine.seekTo(position)
-        updatePlaybackState()
+        val ch = BassEngine.getChannelHandle()
+        if (ch == 0) return
+        if (!BassEngine.seekTo(position)) {
+            // seek failed — stream may be dead (e.g. song deleted from server)
+            Log.w("MusicPlayer", "seekTo 失败，停止播放")
+            pause()
+            BassEngine.stop()
+            updatePlaybackState()
+        } else {
+            updatePlaybackState()
+        }
+    }
+
+    /** 如果当前正在播放的歌曲在删除列表中，停止播放并释放资源。 */
+    fun stopIfCurrentSongDeleted(songIds: Set<Long>) {
+        val currentSong = _playbackState.value.currentSong ?: return
+        if (currentSong.id in songIds) {
+            Log.d("MusicPlayer", "当前播放的歌曲被删除 (id=${currentSong.id})，停止播放")
+            pause()
+            BassEngine.stop()
+            updatePlaybackState()
+        }
     }
 
     // ── 曲目切换 ────────────────────────────────────────────────

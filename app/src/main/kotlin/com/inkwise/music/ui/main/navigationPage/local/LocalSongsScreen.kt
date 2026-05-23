@@ -83,6 +83,7 @@ fun LocalSongsScreen(
     val context = LocalContext.current
     val playbackState by playerViewModel.playbackState.collectAsState()
     val songs by localViewModel.localSongs.collectAsState()
+    val isLoading by localViewModel.isLoading.collectAsState()
     val isScanning by localViewModel.isScanning.collectAsState()
     val sortMode by localViewModel.sortMode.collectAsState()
     val allPlaylists by homeViewModel.playlists.collectAsState()
@@ -153,7 +154,12 @@ fun LocalSongsScreen(
     val selectedSongs = songs.filter { it.id in selectedIds }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        if (songs.isEmpty() && !isScanning) {
+        if (isLoading) {
+            // ── 加载中 ──
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (songs.isEmpty() && !isScanning) {
             // ── 空态 ──
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Button(onClick = { showScanDialog = true }) {
@@ -165,7 +171,7 @@ fun LocalSongsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -263,10 +269,6 @@ fun LocalSongsScreen(
                                 },
                                 addToQueue = { playerViewModel.addToQueue(song) },
                                 onMoreClick = { actionSong = song },
-                                onArtistClick = { mainViewModel.navigateToArtist(it) },
-                                onArtistNameClick = if (song.artistIds.isEmpty()) {
-                                    { name: String -> mainViewModel.navigateToArtistByName(name) }
-                                } else null,
                                 multiSelectMode = multiSelectMode,
                                 isSelected = song.id in selectedIds,
                                 onToggleSelect = {
@@ -374,7 +376,6 @@ fun LocalSongsScreen(
                 infoSong = null
                 infoFingerprint = null
             },
-            onArtistClick = { mainViewModel.navigateToArtist(it) }
         )
     }
 
@@ -392,6 +393,7 @@ fun LocalSongsScreen(
             onShowInfo = {
                 infoSong = song
             },
+            onEditInfo = { mainViewModel.navigateToEditSong(song.id) },
             onDelete = {
                 localViewModel.deleteSong(song)
                 Toast.makeText(context, "已删除: ${song.title}", Toast.LENGTH_SHORT).show()
@@ -401,9 +403,7 @@ fun LocalSongsScreen(
                 Toast.makeText(context, "已添加到歌单", Toast.LENGTH_SHORT).show()
             },
             onRemoveFromPlaylist = {},
-            onArtistClick = { mainViewModel.navigateToArtist(it) },
             onAlbumClick = { mainViewModel.navigateToAlbum(it) },
-            onArtistNameClick = { mainViewModel.navigateToArtistByName(it) }
         )
     }
 }

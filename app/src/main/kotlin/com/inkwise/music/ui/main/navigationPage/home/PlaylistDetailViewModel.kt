@@ -20,6 +20,7 @@ import com.inkwise.music.data.network.ApiService
 import com.inkwise.music.data.network.model.FingerprintCheckRequest
 import com.inkwise.music.data.network.model.FingerprintQuery
 import com.inkwise.music.data.prefs.PreferencesManager
+import com.inkwise.music.player.MusicPlayerManager
 import com.inkwise.music.ui.main.navigationPage.components.SortMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,7 @@ data class PlaylistDetailUiState(
     val songs: List<Song> = emptyList(),
     val playlistTitle: String = "",
     val isRefreshing: Boolean = false,
+    val isLoading: Boolean = true,
     val downloadedSongIds: Set<Long> = emptySet()
 )
 
@@ -53,11 +55,14 @@ class PlaylistDetailViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "PlaylistDetailVM"
+        private val cachedStates = mutableMapOf<Long, PlaylistDetailUiState>()
     }
 
     val playlistId: Long = savedStateHandle.get<Long>("playlistId") ?: 0L
 
-    private val _uiState = MutableStateFlow(PlaylistDetailUiState())
+    private val _uiState = MutableStateFlow(
+        cachedStates[playlistId] ?: PlaylistDetailUiState()
+    )
     val uiState: StateFlow<PlaylistDetailUiState> = _uiState
 
     private val _sortMode = MutableStateFlow(
@@ -86,10 +91,12 @@ class PlaylistDetailViewModel @Inject constructor(
                     playlist = playlistWithSongs,
                     songs = sorted,
                     playlistTitle = playlistWithSongs.playlist.title,
+                    isLoading = false,
                     downloadedSongIds = _uiState.value.downloadedSongIds
                 )
             }.collect { state ->
                 _uiState.value = state
+                cachedStates[playlistId] = state
             }
         }
         viewModelScope.launch {
@@ -280,6 +287,8 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     fun deleteSongsPermanently(songs: List<Song>, context: Context) {
+        // 如果删除的歌曲中包含当前正在播放的，先停止播放
+        MusicPlayerManager.stopIfCurrentSongDeleted(songs.map { it.id }.toSet())
         viewModelScope.launch(Dispatchers.IO) {
             for (song in songs) {
                 try {
@@ -313,6 +322,8 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     fun deleteSong(song: Song) {
+        // 如果删除的是当前正在播放的歌曲，先停止播放
+        MusicPlayerManager.stopIfCurrentSongDeleted(setOf(song.id))
         viewModelScope.launch {
             if (!song.isLocal && song.cloudId != null) {
                 try {

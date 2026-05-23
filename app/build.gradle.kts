@@ -9,6 +9,7 @@ plugins {
 hilt {
     enableAggregatingTask = false
 }
+
 android {
     namespace = "com.inkwise.music"
     compileSdk = 36

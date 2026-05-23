@@ -17,6 +17,7 @@ import com.inkwise.music.data.network.model.FingerprintQuery
 import com.inkwise.music.data.network.model.ReorderMusicRequest
 import com.inkwise.music.data.network.safeApiCall
 import com.inkwise.music.data.prefs.PreferencesManager
+import com.inkwise.music.player.MusicPlayerManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,9 +57,10 @@ class CloudViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "CloudVM"
+        private var cachedUiState: CloudUiState? = null
     }
 
-    private val _uiState = MutableStateFlow(CloudUiState())
+    private val _uiState = MutableStateFlow(CloudUiState(isLoading = true))
     val uiState: StateFlow<CloudUiState> = _uiState.asStateFlow()
 
     init {
@@ -73,6 +75,9 @@ class CloudViewModel @Inject constructor(
                 CloudSortBy.CREATED_DESC -> false
             }
             _uiState.value = _uiState.value.copy(sortBy = savedSort, sortOrderAsc = asc)
+        }
+        cachedUiState?.let {
+            _uiState.value = it
         }
         loadSongs()
 
@@ -110,6 +115,7 @@ class CloudViewModel @Inject constructor(
                         isLoading = false,
                         error = null
                     )
+                    cachedUiState = _uiState.value
                     // 3. 元数据本地匹配（无网络也能工作）
                     checkLocalMetadataMatches()
                     // 4. 指纹匹配（更精确）
@@ -446,6 +452,8 @@ class CloudViewModel @Inject constructor(
                 prefs.requireLogin()
                 return@launch
             }
+            // 如果删除的歌曲中包含当前正在播放的，先停止播放
+            MusicPlayerManager.stopIfCurrentSongDeleted(songIds.toSet())
             try {
                 val token = prefs.authToken.first()
                 for (id in songIds) {

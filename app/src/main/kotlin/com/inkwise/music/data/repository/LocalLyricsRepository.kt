@@ -7,9 +7,12 @@ import com.inkwise.music.data.model.LyricToken
 import com.inkwise.music.data.model.Lyrics
 import com.inkwise.music.data.model.LyricsSource
 import com.inkwise.music.data.model.Song
+import com.inkwise.music.data.network.ApiService
+import com.inkwise.music.data.prefs.PreferencesManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import org.jaudiotagger.audio.AudioFileIO
@@ -24,11 +27,18 @@ class LocalLyricsRepository
         private val musicRepository: MusicRepository,
         @ApplicationContext private val context: Context,
         private val lyricsCacheManager: LyricsCacheManager,
+        private val api: ApiService,
+        private val prefs: PreferencesManager,
     ) : LyricsRepository {
         private val cache = mutableMapOf<Long, Lyrics>()
 
         // LRC time tag regex: [mm:ss.xx] or [mm:ss.xxx]
         private val timeTagRegex = Regex("""\[(\d{2}):(\d{2})\.(\d{2,3})]""")
+
+        override fun invalidateCache(songId: Long) {
+            cache.remove(songId)
+            lyricsCacheManager.remove(songId)
+        }
 
         override suspend fun loadLyrics(songId: Long): Lyrics? {
             // 1) 内存缓存
@@ -54,7 +64,16 @@ class LocalLyricsRepository
                 return it
             }
 
-            // 5) 网络歌词
+            // 5) 云端 API 歌词
+            if (!song.isLocal && song.cloudId != null) {
+                fetchCloudLyrics(song)?.let {
+                    cache[songId] = it
+                    lyricsCacheManager.put(songId, it)
+                    return it
+                }
+            }
+
+            // 6) 网络 URL 歌词（降级）
             val lyricsUrl = song.lyricsUrl
             if (!lyricsUrl.isNullOrBlank()) {
                 loadNetworkLyrics(lyricsUrl, songId)?.let {
@@ -130,6 +149,23 @@ class LocalLyricsRepository
             } catch (_: Exception) {}
 
             return Charsets.UTF_8
+        }
+
+        // ── Cloud API lyrics ─────────────────────────────────────
+
+        private suspend fun fetchCloudLyrics(song: Song): Lyrics? {
+            return withContext(Dispatchers.IO) {
+                try {
+                    val token = prefs.authToken.first() ?: return@withContext null
+                    val cloudId = song.cloudId ?: return@withContext null
+                    val response = api.getLyrics("Bearer $token", cloudId)
+                    if (!response.isSuccessful) return@withContext null
+                    val content = response.body()?.string() ?: return@withContext null
+                    parseLrcLines(content, song.id, LyricsSource.NETWORK)
+                } catch (_: Exception) {
+                    null
+                }
+            }
         }
 
         // ── Network lyrics ────────────────────────────────────────

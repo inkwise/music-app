@@ -144,7 +144,7 @@ fun CloudSongsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -270,10 +270,6 @@ fun CloudSongsScreen(
                                 },
                                 addToQueue = { playerViewModel.addToQueue(song) },
                                 onMoreClick = { actionSong = song },
-                                onArtistClick = { mainViewModel.navigateToArtist(it) },
-                                onArtistNameClick = if (song.artistIds.isEmpty()) {
-                                    { name: String -> mainViewModel.navigateToArtistByName(name) }
-                                } else null,
                                 multiSelectMode = multiSelectMode,
                                 isSelected = song.id in selectedIds,
                                 onToggleSelect = {
@@ -353,7 +349,6 @@ fun CloudSongsScreen(
                 infoSong = null
                 infoFingerprint = null
             },
-            onArtistClick = { mainViewModel.navigateToArtist(it) }
         )
     }
 
@@ -371,6 +366,7 @@ fun CloudSongsScreen(
             onShowInfo = {
                 infoSong = song
             },
+            onEditInfo = { mainViewModel.navigateToEditSong(song.id) },
             onDelete = {
                 cloudViewModel.deleteCloudSongs(listOf(song.id))
                 Toast.makeText(context, "已删除: ${song.title}", Toast.LENGTH_SHORT).show()
@@ -380,9 +376,7 @@ fun CloudSongsScreen(
                 Toast.makeText(context, "已添加到歌单", Toast.LENGTH_SHORT).show()
             },
             onRemoveFromPlaylist = {},
-            onArtistClick = { mainViewModel.navigateToArtist(it) },
             onAlbumClick = { mainViewModel.navigateToAlbum(it) },
-            onArtistNameClick = { mainViewModel.navigateToArtistByName(it) }
         )
     }
 }

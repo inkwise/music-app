@@ -15,6 +15,7 @@ import com.inkwise.music.data.model.Song
 import com.inkwise.music.data.prefs.PreferencesManager
 import com.inkwise.music.data.prefs.SavedPlaybackState
 import com.inkwise.music.data.repository.LyricsRepository
+import com.inkwise.music.data.network.ApiService
 import com.inkwise.music.data.repository.MusicRepository
 import com.inkwise.music.player.MusicPlayerManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -38,6 +40,7 @@ class PlayerViewModel
         private val repository: MusicRepository,
         private val lyricsRepository: LyricsRepository,
         private val prefs: PreferencesManager,
+        private val api: ApiService,
     ) : ViewModel() {
 
         private var saveJob: Job? = null
@@ -250,6 +253,31 @@ class PlayerViewModel
 
         fun cancelSleepTimer() {
             MusicPlayerManager.cancelSleepTimer()
+        }
+
+        private val _shareLinkResult = MutableStateFlow<String?>(null)
+        val shareLinkResult: StateFlow<String?> = _shareLinkResult.asStateFlow()
+
+        fun shareSong() {
+            viewModelScope.launch {
+                val song = currentSong.value ?: return@launch
+                val cloudId = song.cloudId ?: return@launch
+                val token = prefs.authToken.first() ?: return@launch
+                try {
+                    val response = api.createShareLink(
+                        token = "Bearer $token",
+                        musicId = cloudId
+                    )
+                    if (response.isSuccessful && response.body() != null) {
+                        _shareLinkResult.value = response.body()!!.share_url
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        fun clearShareLinkResult() {
+            _shareLinkResult.value = null
         }
     }
 

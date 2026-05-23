@@ -7,4 +7,6 @@ interface LyricsRepository {
     suspend fun loadLyrics(songId: Long): Lyrics?
 
     fun observeLyrics(songId: Long): Flow<Lyrics?>
+
+    fun invalidateCache(songId: Long)
 }

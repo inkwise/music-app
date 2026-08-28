@@ -1,9 +1,12 @@
 package com.inkwise.music.data.network
 
+import android.content.Context
+import android.content.pm.ApplicationInfo
 import com.inkwise.music.data.prefs.PreferencesManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -22,7 +25,8 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(prefs: PreferencesManager): OkHttpClient {
+    fun provideOkHttpClient(@ApplicationContext context: Context, prefs: PreferencesManager): OkHttpClient {
+        val isDebug = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.HEADERS
         }
@@ -44,7 +48,10 @@ object NetworkModule {
         val authInterceptor = Interceptor { chain ->
             val request = chain.request()
             val response = chain.proceed(request)
-            if (response.code == 401 && !request.url.encodedPath.contains("/auth/")) {
+            // 仅当请求确实携带了 Authorization 且被服务端判 401 时才登出；
+            // 避免未带 token 的请求或瞬时 401 误清登录态
+            val hadAuth = request.header("Authorization") != null
+            if (response.code == 401 && hadAuth && !request.url.encodedPath.contains("/auth/")) {
                 runBlocking {
                     prefs.clearAuthDataExceptUsername()
                     prefs.requireLogin()
@@ -56,10 +63,11 @@ object NetworkModule {
         return OkHttpClient.Builder()
             .addInterceptor(urlRewriteInterceptor)
             .addInterceptor(authInterceptor)
-            .addInterceptor(loggingInterceptor)
+            // 日志拦截器仅 debug 构建：release 不把带 token 的请求头写入 logcat
+            .apply { if (isDebug) addInterceptor(loggingInterceptor) }
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(120, TimeUnit.SECONDS)  // 大文件上传需要更长超时
             .build()
     }
 

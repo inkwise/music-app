@@ -20,12 +20,14 @@ import android.os.Build
 import android.os.IBinder
 import com.inkwise.music.MainActivity
 import com.inkwise.music.R
+import com.inkwise.music.player.BassEngine
 import com.inkwise.music.player.MusicPlayerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MusicService : Service() {
 
@@ -33,6 +35,11 @@ class MusicService : Service() {
         private const val CHANNEL_ID = "music_playback"
         private const val NOTIFICATION_ID = 1
         private const val TAG = "MusicService"
+        const val ACTION_PREV = "com.inkwise.music.action.PREV"
+        const val ACTION_TOGGLE = "com.inkwise.music.action.TOGGLE"
+        const val ACTION_NEXT = "com.inkwise.music.action.NEXT"
+        private const val DUCK_VOLUME = 0.3f
+        private const val STOP_FOREGROUND_REMOVE = Service.STOP_FOREGROUND_REMOVE
     }
 
     private var mediaSession: MediaSession? = null
@@ -40,6 +47,7 @@ class MusicService : Service() {
     private var audioFocusRequest: AudioFocusRequest? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var wasPlayingBeforeFocusLoss = false
+    private var isDucked = false
     private var focusLossPause = false
 
     override fun onCreate() {
@@ -74,7 +82,14 @@ class MusicService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
+        // 通知按钮点击 → 分发到播放控制
+        when (intent?.action) {
+            ACTION_PREV -> MusicPlayerManager.skipToPrevious()
+            ACTION_TOGGLE -> MusicPlayerManager.playPause()
+            ACTION_NEXT -> MusicPlayerManager.skipToNext()
+        }
+        // NOT_STICKY：服务被杀后不空拉起（避免出现空状态常驻通知）
+        return START_NOT_STICKY
     }
 
     private fun createNotificationChannel() {
@@ -104,12 +119,39 @@ class MusicService : Service() {
     }
 
     private var lastPlaying = false
+    // 通知/MediaSession 元数据只在歌曲或播放状态变化时更新，避免每个进度 tick 都解码专辑图
+    private var lastNotifSongKey: Pair<Long, String>? = null
+    private var lastNotifPlaying: Boolean? = null
+    private var cachedAlbumArt: Bitmap? = null
 
     private fun observePlaybackState() {
         scope.launch {
             MusicPlayerManager.playbackState.collect { state ->
-                updateMediaSession(state)
-                updateNotification(state)
+                val songKey = state.currentSong?.let { it.id to it.uri }
+                val songChanged = songKey != lastNotifSongKey
+
+                if (songChanged) {
+                    lastNotifSongKey = songKey
+                    val s = state.currentSong
+                    // 专辑图解码移到 IO 线程，且只在切歌时执行一次
+                    cachedAlbumArt = withContext(Dispatchers.IO) {
+                        loadAlbumArt(s?.albumArt, s?.let { audioPath(it) })
+                    }
+                }
+
+                updateMediaSession(state, songChanged)
+
+                // 通知重建仅在歌曲/播放状态变化时进行；进度条由 MediaSession 播放状态驱动
+                if (songChanged || state.isPlaying != lastNotifPlaying) {
+                    lastNotifPlaying = state.isPlaying
+                    updateNotification(state)
+                }
+
+                // 播放已停止且队列清空 → 退出前台服务，不留常驻通知
+                if (!state.isPlaying && MusicPlayerManager.playQueue.value.isEmpty()) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
 
                 // 音频焦点管理
                 if (state.isPlaying && !lastPlaying) {
@@ -214,18 +256,18 @@ class MusicService : Service() {
         return size
     }
 
-    private fun updateMediaSession(state: com.inkwise.music.data.model.PlaybackState) {
+    private fun updateMediaSession(state: com.inkwise.music.data.model.PlaybackState, metadataChanged: Boolean) {
         val session = mediaSession ?: return
 
         val song = state.currentSong
-        if (song != null) {
+        if (song != null && metadataChanged) {
             val builder = android.media.MediaMetadata.Builder()
                 .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, song.title)
                 .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, song.artist)
                 .putString(android.media.MediaMetadata.METADATA_KEY_ALBUM, song.album)
                 .putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, state.duration)
 
-            loadAlbumArt(song.albumArt, audioPath(song))?.let { art ->
+            cachedAlbumArt?.let { art ->
                 builder.putBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART, art)
             }
 
@@ -269,7 +311,7 @@ class MusicService : Service() {
             .setMediaSession(mediaSession?.sessionToken)
             .setShowActionsInCompactView(0)
 
-        val albumArt = loadAlbumArt(state.currentSong?.albumArt, state.currentSong?.let { audioPath(it) })
+        val albumArt = cachedAlbumArt
 
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(state.currentSong?.title ?: "未在播放")
@@ -284,27 +326,34 @@ class MusicService : Service() {
                 Notification.Action.Builder(
                     android.R.drawable.ic_media_previous,
                     "上一曲",
-                    mediaSession?.controller?.let {
-                        null // handled via MediaSession callback
-                    },
+                    actionIntent(ACTION_PREV),
                 ).build(),
             )
             .addAction(
                 Notification.Action.Builder(
                     if (state.isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
                     if (state.isPlaying) "暂停" else "播放",
-                    null, // handled via MediaSession callback
+                    actionIntent(ACTION_TOGGLE),
                 ).build(),
             )
             .addAction(
                 Notification.Action.Builder(
                     android.R.drawable.ic_media_next,
                     "下一曲",
-                    null, // handled via MediaSession callback
+                    actionIntent(ACTION_NEXT),
                 ).build(),
             )
             .build()
     }
+
+    /** 通知按钮的 PendingIntent：发给本 Service 的 action intent */
+    private fun actionIntent(action: String): PendingIntent =
+        PendingIntent.getService(
+            this,
+            action.hashCode(),
+            Intent(this, MusicService::class.java).setAction(action),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
 
     private fun requestAudioFocus() {
         if (audioFocusRequest != null) return
@@ -350,6 +399,11 @@ class MusicService : Service() {
     private fun onAudioFocusChange(focusChange: Int) {
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
+                // 恢复音量（若处于 ducking）
+                if (isDucked) {
+                    isDucked = false
+                    BassEngine.setVolumePercent(1.0f)
+                }
                 // 重新获得焦点：如果之前因焦点丢失而暂停，则恢复播放
                 if (wasPlayingBeforeFocusLoss) {
                     MusicPlayerManager.play()
@@ -358,6 +412,7 @@ class MusicService : Service() {
             }
             AudioManager.AUDIOFOCUS_LOSS -> {
                 // 永久失去焦点：暂停并释放
+                isDucked = false
                 if (MusicPlayerManager.playbackState.value.isPlaying) {
                     wasPlayingBeforeFocusLoss = false
                 }
@@ -374,7 +429,10 @@ class MusicService : Service() {
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 // 其他 app 播放短暂声音：降低音量而非完全暂停
-                // BASS 引擎层面可在此降低音量（ducking）
+                if (!isDucked) {
+                    isDucked = true
+                    BassEngine.setVolumePercent(DUCK_VOLUME)
+                }
             }
         }
     }

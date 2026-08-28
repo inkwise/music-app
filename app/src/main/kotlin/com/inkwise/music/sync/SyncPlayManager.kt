@@ -13,11 +13,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
@@ -42,12 +46,18 @@ object SyncPlayManager {
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
+    private val _deviceStatusUpdates = MutableSharedFlow<Unit>(extraBufferCapacity = 16)
+    val deviceStatusUpdates: SharedFlow<Unit> = _deviceStatusUpdates.asSharedFlow()
+
     private var ntpClient: NtpClient? = null
     private var wsClient: SyncWsClient? = null
     private var apiService: ApiService? = null
     private var token: String = ""
     private var prefs: PreferencesManager? = null
     private var dynamicSyncJob: Job? = null
+    private var roleChangeJob: Job? = null
+    private var slaveMessageJob: Job? = null
+    private var deviceStatusJob: Job? = null
 
     @Volatile private var slavePlayStartServerTimeMs: Long = 0L
     @Volatile private var slavePlayStartPositionMs: Long = 0L
@@ -56,7 +66,12 @@ object SyncPlayManager {
     fun init(context: Context, prefs: PreferencesManager, okHttpClient: OkHttpClient) {
         this.prefs = prefs
         ntpClient = NtpClient()
-        wsClient = SyncWsClient(prefs)
+        // WS 专用 client：关闭 readTimeout（空闲不断链），启用协议层 ping 保活
+        val wsClient2 = okHttpClient.newBuilder()
+            .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .pingInterval(15, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        wsClient = SyncWsClient(prefs, wsClient2)
 
         MusicPlayerManager.syncInterceptor = { action, positionMs ->
             when (_role.value) {
@@ -109,8 +124,18 @@ object SyncPlayManager {
         registerDevice(api, authToken, p, r)
         wsClient?.connect(jwtToken, deviceId, deviceName)
 
-        // 等待 WS 连接建立
-        delay(500)
+        // 等待 WS 连接建立（最多 3s），失败如实上报
+        val deadline = System.currentTimeMillis() + 3000
+        while (wsClient?.connectionState?.value != SyncWsClient.ConnectionState.CONNECTED &&
+            System.currentTimeMillis() < deadline
+        ) {
+            delay(100)
+        }
+        val connected = wsClient?.connectionState?.value == SyncWsClient.ConnectionState.CONNECTED
+        if (!connected) {
+            Log.e(TAG, "WS 连接失败，启用同步中止")
+            return Result.failure(IllegalStateException("无法连接同步服务器，请检查网络或服务器地址"))
+        }
 
         // 设置角色
         wsClient?.send(SyncMessage(type = "set_role", payload = mapOf("role" to r.name.lowercase())))
@@ -129,6 +154,8 @@ object SyncPlayManager {
         }
 
         _connected.value = true
+        // ★ 监听设备在线状态变化
+        startDeviceStatusWatcher()
         Log.d(TAG, "Sync enabled as $r")
         return Result.success(Unit)
     }
@@ -137,13 +164,84 @@ object SyncPlayManager {
         stopDynamicSync()
         _syncActive.value = false
         _role.value = Role.NONE
+        // ★ 不断 WebSocket — 设备仍需保持在线状态
+        // ★ 通知服务器：本机退出同步
+        scope.launch {
+            wsClient?.send(SyncMessage(
+                type = "set_role",
+                payload = mapOf("role" to "slave", "sync_enabled" to false)
+            ))
+        }
+        Log.d(TAG, "Sync disabled (WS stays connected)")
+    }
+
+    /** 彻底断开（退出登录时调用） */
+    fun fullDisconnect() {
+        stopDynamicSync()
+        _syncActive.value = false
+        _role.value = Role.NONE
         _connected.value = false
         wsClient?.disconnect()
-        Log.d(TAG, "Sync disabled")
+        Log.d(TAG, "Fully disconnected")
     }
 
     fun setRole(role: Role) {
         _role.value = role
+    }
+
+    // ── 仅连接设备（在线状态，不同步播放）──
+
+    suspend fun connectDeviceOnly(api: ApiService, authToken: String) {
+        this.apiService = api
+        this.token = authToken
+        this.prefs = prefs ?: return
+
+        val jwtToken = authToken.removePrefix("Bearer ")
+        val deviceId = prefs!!.getDeviceId()
+        val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+
+        // 注册设备（不设角色）
+        registerDevice(api, authToken, prefs!!, Role.NONE)
+        // 连接 WebSocket 上报在线状态
+        wsClient?.connect(jwtToken, deviceId, deviceName)
+        _connected.value = true
+        // ★ 监听设备在线状态变化
+        startDeviceStatusWatcher()
+        Log.d(TAG, "Device connected for online status")
+    }
+
+    private fun startDeviceStatusWatcher() {
+        val ws = wsClient ?: return
+        // 重复启用同步时先取消旧收集器，避免叠加
+        deviceStatusJob?.cancel()
+        deviceStatusJob = scope.launch {
+            ws.deviceStatuses.collect { status ->
+                Log.d(TAG, "Device status: ${status.deviceId} online=${status.isOnline}")
+                _deviceStatusUpdates.emit(Unit)
+            }
+        }
+    }
+
+    fun disconnectDevice() {
+        _connected.value = false
+        if (_role.value == Role.NONE) {
+            wsClient?.disconnect()
+        }
+        Log.d(TAG, "Device disconnected from online status")
+    }
+
+    // ── 踢出从机 ──
+
+    fun kickSlave(slaveDeviceId: String) {
+        scope.launch {
+            wsClient?.send(
+                SyncMessage(
+                    type = "kick_slave",
+                    payload = mapOf("device_id" to slaveDeviceId)
+                )
+            )
+            Log.d(TAG, "Kick slave sent: $slaveDeviceId")
+        }
     }
 
     // ── 主机操作 ──
@@ -259,10 +357,32 @@ object SyncPlayManager {
 
     fun toggleSync(enable: Boolean) {
         _syncActive.value = enable
-        if (enable && _role.value == Role.HOST) {
-            hostPlay()
-        } else if (!enable && _role.value == Role.HOST) {
-            hostPause()
+        val ws = wsClient ?: return
+        when (_role.value) {
+            Role.HOST -> {
+                if (enable) hostPlay() else hostPause()
+                // 通知服务器主机同步开关变更
+                scope.launch {
+                    ws.send(SyncMessage(
+                        type = "set_role",
+                        payload = mapOf("role" to "host", "sync_enabled" to enable)
+                    ))
+                }
+            }
+            Role.SLAVE -> {
+                if (!enable) {
+                    stopDynamicSync()
+                    MusicPlayerManager.pause()
+                }
+                // ★ 从机通知服务器自己的同步开关状态
+                scope.launch {
+                    ws.send(SyncMessage(
+                        type = "set_role",
+                        payload = mapOf("role" to "slave", "sync_enabled" to enable)
+                    ))
+                }
+            }
+            else -> {}
         }
     }
 
@@ -280,7 +400,8 @@ object SyncPlayManager {
 
     private fun startRoleChangeHandler() {
         val ws = wsClient ?: return
-        scope.launch {
+        roleChangeJob?.cancel()
+        roleChangeJob = scope.launch {
             ws.messages.collect { msg ->
                 when (msg.type) {
                     "role_changed" -> {
@@ -303,7 +424,8 @@ object SyncPlayManager {
 
     private fun startSlaveMessageHandler() {
         val ws = wsClient ?: return
-        scope.launch {
+        slaveMessageJob?.cancel()
+        slaveMessageJob = scope.launch {
             ws.messages.collect { msg -> handleSlaveMessage(msg) }
         }
     }
@@ -342,12 +464,28 @@ object SyncPlayManager {
                 stopDynamicSync()
                 Log.w(TAG, "Host disconnected, paused")
             }
+            "slave_kicked" -> {
+                // 被主机踢出（关闭本机同步）
+                val payload = msg.payload ?: return
+                val deviceId = payload["device_id"] as? String ?: return
+                if (deviceId == prefs?.getDeviceId()) {
+                    stopDynamicSync()
+                    _syncActive.value = false
+                    _role.value = Role.NONE
+                    Log.w(TAG, "Kicked by host, sync disabled")
+                }
+            }
             "slave_sync_toggled" -> {
                 val payload = msg.payload ?: return
+                val deviceId = payload["device_id"] as? String ?: return
                 val enabled = payload["enabled"] as? Boolean ?: true
-                if (!enabled && _role.value == Role.SLAVE) {
+                // 如果是本设备且同步被关闭
+                if (!enabled && deviceId == prefs?.getDeviceId() && _role.value == Role.SLAVE) {
                     MusicPlayerManager.pause()
                     stopDynamicSync()
+                    _syncActive.value = false
+                    _role.value = Role.NONE
+                    Log.i(TAG, "Sync disabled for this device")
                 }
             }
             "member_joined", "member_left", "role_changed" -> {
@@ -367,7 +505,7 @@ object SyncPlayManager {
 
         if (waitMs > 5) {
             delay(waitMs - 5)
-            while (System.currentTimeMillis() < localTriggerTime) {}
+            while (System.currentTimeMillis() < localTriggerTime) yield() // yield 而非忙等，避免占死主线程
         }
 
         BassEngine.play()
@@ -384,7 +522,7 @@ object SyncPlayManager {
 
         if (waitMs > 5) {
             delay(waitMs - 5)
-            while (System.currentTimeMillis() < localTriggerTime) {}
+            while (System.currentTimeMillis() < localTriggerTime) yield() // yield 而非忙等，避免占死主线程
         }
 
         BassEngine.pause()
@@ -398,7 +536,7 @@ object SyncPlayManager {
 
         if (waitMs > 5) {
             delay(waitMs - 5)
-            while (System.currentTimeMillis() < localTriggerTime) {}
+            while (System.currentTimeMillis() < localTriggerTime) yield() // yield 而非忙等，避免占死主线程
         }
 
         BassEngine.seekTo(seekPosMs)
@@ -417,7 +555,7 @@ object SyncPlayManager {
 
         if (waitMs > 5) {
             delay(waitMs - 5)
-            while (System.currentTimeMillis() < localTriggerTime) {}
+            while (System.currentTimeMillis() < localTriggerTime) yield() // yield 而非忙等，避免占死主线程
         }
 
         BassEngine.play()

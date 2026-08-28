@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-import java.util.concurrent.TimeUnit
 
 class NtpClient {
 
@@ -22,8 +21,9 @@ class NtpClient {
         private const val MAX_OUTLIER_SIGMA = 2.0
     }
 
+    /** 服务器时钟 − 本地时钟 的偏移量（毫秒）。offset = ((t2−t1)+(t3−t4))/2 */
     @Volatile
-    var clockOffsetNs: Long = 0L
+    var clockOffsetMs: Long = 0L
         private set
 
     @Volatile
@@ -41,15 +41,16 @@ class NtpClient {
 
         for (i in 0 until SYNC_SAMPLES) {
             try {
-                val t1 = System.nanoTime()
+                // 全程使用墙钟毫秒，与服务器返回的 epoch 毫秒保持同一时基
+                val t1 = System.currentTimeMillis()
                 val result = wsClient.sendNtpRequest(t1) ?: continue
-                val t4 = System.nanoTime()
+                val t4 = System.currentTimeMillis()
 
                 val t2 = result["t2"] as? Long ?: continue
                 val t3 = result["t3"] as? Long ?: continue
 
                 val offset = ((t2 - t1) + (t3 - t4)) / 2
-                val rtt = ((t4 - t1) - (t3 - t2)).toDouble() / 1_000_000.0
+                val rtt = ((t4 - t1) - (t3 - t2)).toDouble()
 
                 offsets.add(offset)
                 latencies.add(rtt)
@@ -69,11 +70,11 @@ class NtpClient {
         val filtered = filterOutliers(offsets, latencies)
         if (filtered.first.isEmpty()) return false
 
-        clockOffsetNs = filtered.first.sorted()[filtered.first.size / 2]
+        clockOffsetMs = filtered.first.sorted()[filtered.first.size / 2]
         estimatedLatencyMs = filtered.second.sorted()[filtered.second.size / 2]
         _synced.value = true
 
-        Log.d(TAG, "NTP synced: offset=${TimeUnit.NANOSECONDS.toMicros(clockOffsetNs)}µs, " +
+        Log.d(TAG, "NTP synced: offset=${clockOffsetMs}ms, " +
                 "latency=${String.format("%.1f", estimatedLatencyMs)}ms")
         return true
     }
@@ -96,12 +97,14 @@ class NtpClient {
         return filteredOffsets to filteredLatencies
     }
 
+    /** 估算当前服务器时间（毫秒）：本地墙钟 + offset */
     fun getServerTimeMs(): Long {
-        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - clockOffsetNs)
+        return System.currentTimeMillis() + clockOffsetMs
     }
 
+    /** 服务器时间 → 本地墙钟时间：serverTime − offset */
     fun serverTimeToLocalTimeMs(serverTimeMs: Long): Long {
-        return serverTimeMs + TimeUnit.NANOSECONDS.toMillis(clockOffsetNs)
+        return serverTimeMs - clockOffsetMs
     }
 
     fun startPeriodicSync(

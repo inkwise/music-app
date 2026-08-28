@@ -114,7 +114,7 @@ class UploadViewModel @Inject constructor(
                             ?: "audio/*".toMediaTypeOrNull()
                         val requestBody = object : RequestBody() {
                             override fun contentType() = contentType
-                            override fun contentLength() = contentLength
+                            override fun contentLength() = if (contentLength > 0) contentLength else -1L
                             override fun writeTo(sink: BufferedSink) {
                                 val countingSink = object : ForwardingSink(sink) {
                                     var bytesWritten = 0L

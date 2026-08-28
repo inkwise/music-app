@@ -26,10 +26,15 @@ object BassEngine {
     private const val BASS_CONFIG_DSD_GAIN = 0x10801
 
     private var initialized = false
-    private var activeChannel: Int = 0          // output channel (tempo or raw)
-    private var decodeChannel: Int = 0           // decode stream (only when useTempo)
-    private var endSyncHandle: Int = 0
-    private var isTempoStream: Boolean = false
+
+    // 通道句柄可能被 IO 线程的 load 与其他线程的 play/pause/查询并发访问：
+    // 写入统一在 loadLock 内，读取依赖 @Volatile 保证可见性
+    private val loadLock = Any()
+
+    @Volatile private var activeChannel: Int = 0          // output channel (tempo or raw)
+    @Volatile private var decodeChannel: Int = 0           // decode stream (only when useTempo)
+    @Volatile private var endSyncHandle: Int = 0
+    @Volatile private var isTempoStream: Boolean = false
     private var currentSampleRate: Int = 44100
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -83,6 +88,16 @@ object BassEngine {
             Log.e(TAG, "BASS 未初始化")
             return false
         }
+
+        // 串行化 load：快速切歌时两个加载可能并发（旧加载阻塞在 StreamCreateURL 上），
+        // 交错执行 free/create 会导致 double-free 或悬空句柄。后到的 load 在此排队，
+        // 等旧 load 完成后释放其通道再创建新的。
+        synchronized(loadLock) {
+            return loadLocked(uri, flags, useTempo)
+        }
+    }
+
+    private fun loadLocked(uri: String, flags: Int, useTempo: Boolean): Boolean {
 
         freeActiveChannel()
 
@@ -144,6 +159,16 @@ object BassEngine {
         _isPlaying.value = true
     }
 
+    /**
+     * 设置相对音量（0..1，用于焦点 ducking）。
+     * 通过 BASS_ATTRIB_VOL 浮点属性设置，1.0 为满音量。
+     */
+    fun setVolumePercent(percent: Float) {
+        val ch = activeChannel
+        if (ch == 0) return
+        BASS.BASS_ChannelSetAttribute(ch, BASS.BASS_ATTRIB_VOL, percent.coerceIn(0f, 1f))
+    }
+
     /** Pause playback. */
     fun pause() {
         val ch = activeChannel
@@ -155,7 +180,7 @@ object BassEngine {
     /** Stop playback (resets position to 0). */
     fun stop() {
         if (!initialized) return
-        freeActiveChannel()
+        synchronized(loadLock) { freeActiveChannel() }
         _isPlaying.value = false
     }
 

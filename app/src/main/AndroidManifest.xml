@@ -45,15 +45,11 @@
         <activity
             android:name=".MusicApp$CrashActivity"
             android:exported="false" />
-        <!-- 音乐播放服务 -->
+        <!-- 音乐播放服务（非 MediaBrowserService，不对外导出；通知按钮通过 startService action 分发） -->
         <service
             android:name=".service.MusicService"
             android:foregroundServiceType="mediaPlayback"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.media.browse.MediaBrowserService"/>
-            </intent-filter>
-        </service>
+            android:exported="false" />
         
     </application>
 

@@ -10,6 +10,7 @@ import com.inkwise.music.data.network.model.LoginRequest
 import com.inkwise.music.data.network.model.RegisterRequest
 import com.inkwise.music.data.network.safeApiCall
 import com.inkwise.music.data.prefs.PreferencesManager
+import com.inkwise.music.sync.SyncPlayManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -130,6 +131,8 @@ class AuthViewModel @Inject constructor(
                         isLoggedIn = true, displayName = body.user.username,
                         isLoading = false, message = "登录成功", isError = false
                     )
+                    // ★ 登录后自动连接 WebSocket（上报在线状态）
+                    connectWsAfterLogin(body.token)
                     onSuccess()
                 }
                 is ApiResult.Error -> {
@@ -164,6 +167,8 @@ class AuthViewModel @Inject constructor(
                         isLoggedIn = true, displayName = body.user.username,
                         isLoading = false, message = "注册成功", isError = false
                     )
+                    // ★ 注册后自动连接 WebSocket
+                    connectWsAfterLogin(body.token)
                     onSuccess()
                 }
                 is ApiResult.Error -> {
@@ -171,6 +176,16 @@ class AuthViewModel @Inject constructor(
                         isLoading = false, message = result.message, isError = true
                     )
                 }
+            }
+        }
+    }
+
+    private fun connectWsAfterLogin(authToken: String) {
+        viewModelScope.launch {
+            try {
+                SyncPlayManager.connectDeviceOnly(api, "Bearer $authToken")
+            } catch (e: Exception) {
+                // WS connection failure shouldn't block the app
             }
         }
     }
@@ -232,6 +247,7 @@ class AuthViewModel @Inject constructor(
 
     fun logout() {
         viewModelScope.launch {
+            SyncPlayManager.fullDisconnect()
             prefs.clearAuthData()
             _uiState.value = AuthUiState()
         }

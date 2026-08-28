@@ -48,19 +48,32 @@ class StreamCacheManager @Inject constructor(
         if (file.exists()) return
 
         withContext(Dispatchers.IO) {
+            // 先写 .part 临时文件，完整下载后才改名——中途被杀不会留下"假缓存"
+            val part = File(file.parentFile, file.name + ".part")
             try {
+                part.delete()
                 val request = Request.Builder().url(url).build()
-                val response = client.newCall(request).execute()
-                if (!response.isSuccessful) return@withContext
-                response.body?.let { body ->
-                    FileOutputStream(file).use { out ->
-                        body.byteStream().use { input ->
-                            input.copyTo(out)
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext
+                    response.body?.let { body ->
+                        FileOutputStream(part).use { out ->
+                            body.byteStream().use { input ->
+                                input.copyTo(out)
+                            }
                         }
                     }
                 }
+                if (part.exists() && part.length() > 0) {
+                    if (!part.renameTo(file)) {
+                        file.delete()
+                        part.copyTo(file, overwrite = true)
+                        part.delete()
+                    }
+                } else {
+                    part.delete()
+                }
             } catch (_: Exception) {
-                file.delete()
+                part.delete()
             }
         }
     }

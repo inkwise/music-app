@@ -129,6 +129,9 @@ object MusicPlayerManager {
     private var currentSongForCache: Song? = null
 
     private var loadJob: Job? = null
+    // 加载序号：快速切歌时旧加载（阻塞在 native StreamCreateURL 上，cancel 打不断）
+    // 返回后不得覆盖新加载的结果
+    @Volatile private var loadGeneration: Long = 0L
 
     private fun loadCurrentTrackIntoBass() {
         val queue = _playQueue.value
@@ -150,9 +153,12 @@ object MusicPlayerManager {
 
         // 在后台线程加载网络流，避免阻塞 UI
         loadJob?.cancel()
+        val gen = ++loadGeneration
         loadJob = scope.launch(Dispatchers.IO) {
             val ok = BassEngine.load(resolvedUri, flags, useTempo = tempoNeeded)
             launch(Dispatchers.Main) {
+                // 过期的加载结果：期间用户又切了歌，直接丢弃
+                if (gen != loadGeneration) return@launch
                 if (ok) {
                     fx?.onChannelReady()
                     if (pendingSeekPosition > 0) {
@@ -370,12 +376,17 @@ object MusicPlayerManager {
     }
 
     private fun onBassTrackEnded() {
-        if (playMode == PlayMode.SINGLE) {
-            loadCurrentTrackIntoBass()
-            if (isPlaying) BassEngine.play()
-            return
+        // 此回调运行在 BASS native 线程：不得在其中直接调用 BASS_StreamFree 等
+        // （SINGLE 分支的 loadCurrentTrackIntoBass 会 free 正在回调的通道，可能死锁/崩溃）。
+        // 统一切到主协程执行。
+        scope.launch {
+            if (playMode == PlayMode.SINGLE) {
+                loadCurrentTrackIntoBass()
+                if (isPlaying) BassEngine.play()
+                return@launch
+            }
+            advanceToNext()
         }
-        scope.launch { advanceToNext() }
     }
 
     // ── 播放模式 ────────────────────────────────────────────────
@@ -412,13 +423,16 @@ object MusicPlayerManager {
 
     fun addToQueue(song: Song) {
         val currentQueue = _playQueue.value.toMutableList()
+        val wasEmpty = currentQueue.isEmpty()
         val currentQueueIdx = _currentIndex.value
         val insertIndex = (currentQueueIdx + 1).coerceAtMost(currentQueue.size)
         currentQueue.add(insertIndex, song)
         _playQueue.value = currentQueue
 
-        if (insertIndex <= _currentIndex.value) {
-            _currentIndex.value += 1
+        when {
+            // 空队列插入第一首：当前索引指向它，而不是越界 +1
+            wasEmpty -> _currentIndex.value = 0
+            insertIndex <= currentQueueIdx -> _currentIndex.value = currentQueueIdx + 1
         }
         rebuildShuffleOrder(currentTrackFirst = playMode == PlayMode.SHUFFLE)
     }

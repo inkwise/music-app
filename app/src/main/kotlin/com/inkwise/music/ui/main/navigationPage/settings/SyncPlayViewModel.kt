@@ -66,6 +66,13 @@ class SyncPlayViewModel @Inject constructor(
             }
         }
 
+        // ★ 监听设备在线状态变化，实时刷新设备列表
+        viewModelScope.launch {
+            SyncPlayManager.deviceStatusUpdates.collect {
+                loadSyncStatus()
+            }
+        }
+
         // 初始加载设备列表
         viewModelScope.launch {
             val token = prefs.authToken.first()
@@ -157,8 +164,12 @@ class SyncPlayViewModel @Inject constructor(
 
     fun disableSync() {
         SyncPlayManager.disableSync()
-        _uiState.value = _uiState.value.copy(syncDevices = emptyList(), hostDeviceId = null)
-        viewModelScope.launch { loadSyncStatus() }
+        // 直接更新 UI，不要从 API 重新拉取（API 可能还没同步，会覆盖本地状态）
+        _uiState.value = _uiState.value.copy(
+            role = Role.NONE,
+            syncActive = false,
+            hostDeviceId = null
+        )
     }
 
     fun toggleSync(enable: Boolean) {
@@ -169,6 +180,15 @@ class SyncPlayViewModel @Inject constructor(
         SyncPlayManager.toggleSlave(deviceId, enabled)
         val updated = _uiState.value.syncDevices.map { d ->
             if (d.deviceId == deviceId) d.copy(syncEnabled = enabled) else d
+        }
+        _uiState.value = _uiState.value.copy(syncDevices = updated)
+    }
+
+    fun kickSlave(deviceId: String) {
+        SyncPlayManager.kickSlave(deviceId)
+        // 即时更新 UI：移除该设备或标记为 sync_enabled=false
+        val updated = _uiState.value.syncDevices.map { d ->
+            if (d.deviceId == deviceId) d.copy(syncEnabled = false) else d
         }
         _uiState.value = _uiState.value.copy(syncDevices = updated)
     }

@@ -1,5 +1,6 @@
 package com.inkwise.music.ui.main.navigationPage.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -183,18 +184,29 @@ private fun SyncControlCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewMod
                     }
                 }
 
-                // 从机：状态信息
+                // 从机：自己的音频同步开关
                 if (uiState.role == Role.SLAVE) {
-                    Text(
-                        text = if (uiState.isConnected) "已连接到主机，等待同步指令..." else "正在连接主机...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (uiState.isConnected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (uiState.hostDeviceId != null) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("主机设备: ${uiState.hostDeviceId}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = if (uiState.isConnected) "已连接到主机" else "正在连接主机...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (uiState.isConnected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (uiState.hostDeviceId != null) {
+                                Text("主机: ${uiState.hostDeviceId}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        // ★ 从机自己的同步开关
+                        Switch(
+                            checked = uiState.syncActive,
+                            onCheckedChange = { viewModel.toggleSync(it) }
+                        )
                     }
                 }
 
@@ -246,6 +258,9 @@ private fun DeviceListCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewMode
                         isHost = uiState.role == Role.HOST,
                         onToggleSlave = { enabled ->
                             viewModel.toggleSlave(device.deviceId, enabled)
+                        },
+                        onKickSlave = {
+                            viewModel.kickSlave(device.deviceId)
                         }
                     )
                 }
@@ -258,7 +273,8 @@ private fun DeviceListCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewMode
 private fun DeviceRow(
     device: SyncDeviceInfo,
     isHost: Boolean,
-    onToggleSlave: (Boolean) -> Unit
+    onToggleSlave: (Boolean) -> Unit,
+    onKickSlave: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -294,11 +310,20 @@ private fun DeviceRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        // 主机可以开关从机的同步
+        // 主机可以开关从机的同步 + 踢出
         if (isHost && device.isOnline && device.role == "slave") {
             Switch(
                 checked = device.syncEnabled,
                 onCheckedChange = onToggleSlave
+            )
+            // 踢出按钮
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "踢出设备",
+                tint = Color(0xFFE53935),
+                modifier = Modifier
+                    .size(24.dp)
+                    .clickable { onKickSlave() }
             )
         }
     }

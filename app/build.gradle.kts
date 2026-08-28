@@ -15,6 +15,8 @@ android {
     compileSdk = 36
     ndkVersion = "28.2.13676358"
 
+    // No Room schema export - avoids JDBC native lib dependency on aarch64
+
     defaultConfig {
         applicationId = "com.inkwise.music"
         minSdk = 24
@@ -27,22 +29,10 @@ android {
         ndk {
             abiFilters.add("arm64-v8a")
         }
-
-        externalNativeBuild {
-            cmake {
-                arguments(
-                    "-DANDROID_HOST_TAG=linux-x86_64",
-                    "-DANDROID_STL=c++_shared",
-                )
-            }
-        }
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-        }
-    }
+    // Native build disabled - NDK compilers are x86_64 only on this host
+    // Prebuilt JNI .so libs in jniLibs/ are used instead
 
     buildFeatures {
         compose = true
@@ -140,7 +130,11 @@ dependencies {
 	implementation ("androidx.hilt:hilt-navigation-compose:1.2.0" )
 
 	implementation ("androidx.room:room-runtime:2.8.4")
-  	ksp ("androidx.room:room-compiler:2.8.4" )
+    // Room with aarch64 SQLite JDBC override
+    ksp("androidx.room:room-compiler:2.8.4") {
+        exclude(group = "org.xerial", module = "sqlite-jdbc")
+    }
+    ksp(files("/data/data/com.termux/files/home/sqlite-jdbc-3.41.2.2.jar"))
 	implementation ("androidx.room:room-ktx:2.8.4")
 	implementation ("com.github.AdrienPoupa:jaudiotagger:2.2.3")
 	//主题色

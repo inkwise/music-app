@@ -139,6 +139,8 @@ abstract class MusicDatabase : RoomDatabase() {
                 "music_database"
             )
                 .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                // 迁移链从 v3 开始，v1/v2 极老版本无迁移路径：降级为重建本地库（否则直接崩溃）
+                .fallbackToDestructiveMigrationFrom(1, 2)
                 .build()
         }
     }

@@ -45,3 +45,6 @@ native/
 # Claude
 .claude
 CLAUDE.md
+
+# 误放的服务端配置模板
+config.toml

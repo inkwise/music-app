@@ -1,3 +1,12 @@
+/*
+ * 歌曲列表单项 UI（SongItem）
+ *
+ * 包含：
+ * - SongItem：歌曲行（封面、音质角标、标题、歌手-专辑、加队列按钮、更多菜单），
+ *   同时适配多选模式（左侧勾选框替代操作按钮）。
+ * - AudioQualityIcon：依据采样率/位深/码率显示 Hi-Res / SQ / HQ 音质角标。
+ * - formatTime：毫秒转 "m:ss" 的工具函数。
+ */
 package com.inkwise.music.ui.main.navigationPage.local
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
@@ -40,6 +49,19 @@ import com.inkwise.music.R
 import com.inkwise.music.data.model.Song
 
 
+/**
+ * 歌曲列表单项。
+ *
+ * @param song             歌曲数据
+ * @param isPlaying        是否为正在播放的歌曲（高亮显示）
+ * @param onClick          普通模式下的单击回调（播放）
+ * @param addToQueue       加入播放队列按钮回调
+ * @param onMoreClick      "更多"菜单按钮回调
+ * @param multiSelectMode  多选模式开关：开启后单击行为变为切换选中态
+ * @param isSelected       多选模式下该项是否被选中
+ * @param onToggleSelect   切换选中态回调
+ * @param isDownloaded     是否已下载（显示绿色对勾）
+ */
 @Composable
 fun SongItem(
     song: Song,
@@ -55,6 +77,7 @@ fun SongItem(
     isDownloaded: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    // 多选模式下整行点击的目标从"播放"切换为"切换选中态"
     val itemClick: () -> Unit = if (multiSelectMode) onToggleSelect else onClick
 
     Box(
@@ -73,6 +96,7 @@ fun SongItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (multiSelectMode) {
+                // 多选模式：行首显示勾选/未勾选图标，点击可切换选中态
                 Icon(
                     imageVector = if (isSelected) Icons.Filled.CheckBox else Icons.Outlined.CheckBoxOutlineBlank,
                     contentDescription = if (isSelected) "已选" else "未选",
@@ -82,6 +106,7 @@ fun SongItem(
                         .clickable(onClick = onToggleSelect)
                 )
             }
+            // 封面缩略图：正在播放时底色高亮，未加载时回退到占位图
             Box(
                 modifier =
                     Modifier
@@ -96,6 +121,7 @@ fun SongItem(
                         ),
                 contentAlignment = Alignment.Center,
             ) {
+                // 用小尺寸 + RGB_565 + 关闭淡入淡出降低长列表的图片内存与开销
                 AsyncImage(
                     model =
                         ImageRequest
@@ -116,6 +142,7 @@ fun SongItem(
 
             Spacer(modifier = Modifier.width(4.dp))
 
+            // 标题 +（音质角标 / 歌手 - 专辑）两行文本，正在播放时统一着主色
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = song.title,
@@ -168,6 +195,7 @@ fun SongItem(
             }
 
             if (!multiSelectMode) {
+                // 普通模式：尾部展示下载标记、加队列按钮与更多菜单
                 if (isDownloaded) {
                     Icon(
                         imageVector = Icons.Filled.CheckCircle,
@@ -212,6 +240,7 @@ fun SongItem(
     }
 }
 
+/** 把毫秒时长格式化为 "m:ss"（例如 185000 -> "3:05"），用于展示歌曲时长 */
 fun formatTime(millis: Long): String {
     val totalSeconds = millis / 1000
     val minutes = totalSeconds / 60
@@ -219,6 +248,10 @@ fun formatTime(millis: Long): String {
     return String.format("%d:%02d", minutes, seconds)
 }
 
+/**
+ * 音质角标：按位深/采样率优先判定无损等级，其次看码率；
+ * 不满足任何档位时不渲染任何内容。
+ */
 @Composable
 fun AudioQualityIcon(
     sampleRate: Int,

@@ -1,3 +1,9 @@
+/**
+ * 歌单创建模块 —— 新建歌单标题输入弹窗。
+ *
+ * 打开时自动聚焦输入框并弹出软键盘，输入非空标题后点击"创建"回调 onConfirm，
+ * 右上角 / 空白处点击均为取消。
+ */
 package com.inkwise.music.ui.main.navigationPage.home
 
 import androidx.compose.foundation.layout.Box
@@ -32,6 +38,9 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 
+/**
+ * 新建歌单的标题输入弹窗：受控显示（visible），确认时把标题回传给 onConfirm。
+ */
 @Composable
 fun PlaylistTitleDialog(
     visible: Boolean,
@@ -40,6 +49,7 @@ fun PlaylistTitleDialog(
 ) {
     if (!visible) return
 
+    // 标题输入状态；visible 变为 false 后整体不组合，重开时状态重新初始化为空
     var title by remember { mutableStateOf("") }
 
     val focusRequester = remember { FocusRequester() }
@@ -99,6 +109,7 @@ fun PlaylistTitleDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
+                // 创建按钮：标题为空时不允许提交，提交后关闭弹窗
                 Button(
                     onClick = {
                         if (title.isNotBlank()) {

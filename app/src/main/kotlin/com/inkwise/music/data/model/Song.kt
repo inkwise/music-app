@@ -1,9 +1,19 @@
+/**
+ * 本地数据库实体：歌曲、歌单及其关联关系。
+ */
 package com.inkwise.music.data.model
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+/**
+ * 歌曲实体（Room `songs` 表）。
+ *
+ * 本地扫描到的歌曲与云端音乐统一存这一张表，用 [isLocal] 区分来源，
+ * 并通过 [localId]（系统媒体库 id）或 [cloudId]（服务端音乐 id）关联外部身份。
+ * 这样做使播放队列、歌单、歌词、指纹等模块无需感知歌曲来自哪个渠道。
+ */
 @Entity(tableName = "songs")
 data class Song(
     @PrimaryKey(autoGenerate = true)

@@ -1,3 +1,7 @@
+/**
+ * 歌单排序方式选择底部弹层模块。
+ * 列出全部可选排序模式并高亮当前选中项，点击任意一项立即回调生效。
+ */
 package com.inkwise.music.ui.main.navigationPage.components
 
 import androidx.compose.foundation.clickable
@@ -23,6 +27,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/**
+ * 歌单支持的排序模式，[label] 为界面展示文案。
+ * CUSTOM 表示用户手动拖拽定义的自定义顺序，其余为按标题或添加时间自动排序。
+ */
 enum class SortMode(val label: String) {
     CUSTOM("自定义"),
     TITLE("标题首字母"),
@@ -30,6 +38,14 @@ enum class SortMode(val label: String) {
     ADDED_DESC("添加时间倒序")
 }
 
+/**
+ * 排序方式选择底部弹层。
+ * 遍历 [SortMode] 逐行展示，当前选中的行文字高亮为主题色并在行尾显示对勾；
+ * 点击某行立即通过 [onSelect] 上报所选模式（是否关闭弹层由调用方决定）。
+ *
+ * @param currentMode 当前生效的排序模式
+ * @param onSelect 用户选择新模式时的回调
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SortBottomSheet(
@@ -56,6 +72,7 @@ fun SortBottomSheet(
 
             HorizontalDivider()
 
+            // 逐行渲染排序模式，选中行以主题色文字 + 对勾图标标识
             SortMode.entries.forEach { mode ->
                 val isSelected = mode == currentMode
                 Row(

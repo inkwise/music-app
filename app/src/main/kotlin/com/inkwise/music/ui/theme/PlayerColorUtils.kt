@@ -12,6 +12,34 @@ import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import kotlin.math.abs
 
+/**
+ * 从封面提取"原始主色"（不做压深后处理），供流光主题控件色混合使用。
+ * 对标椒盐 ܪ 调色路径：取 dominant（回退 vibrant/muted）原始色。
+ */
+fun extractProminentColor(bitmap: Bitmap): Int {
+    val scaled = Bitmap.createScaledBitmap(bitmap, 120, 120, false)
+    val palette = Palette.from(scaled).maximumColorCount(16).generate()
+    scaled.recycle()
+    return palette.dominantSwatch?.rgb
+        ?: palette.vibrantSwatch?.rgb
+        ?: palette.mutedSwatch?.rgb
+        ?: FALLBACK_DARK
+}
+
+/**
+ * 椒盐式播放页控件色：封面主色与主题基色 50/50 混合（对标 ܪ 的 avg(封面主色, #FF282828)），
+ * 并按主题钳位亮度保证对比度 —— 浅色流光压在亮背景上（L 0.22~0.52），
+ * 深色流光压在暗背景上（L 0.62~0.95）。封面切换时控件色随之柔和变化。
+ */
+fun playerControlColor(accentColor: Int, dark: Boolean): Int {
+    val base = if (dark) 0xFFFFFFFF.toInt() else 0xFF282828.toInt()
+    val mixed = ColorUtils.blendARGB(base, accentColor, 0.5f)
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(mixed, hsl)
+    hsl[2] = if (dark) hsl[2].coerceIn(0.62f, 0.95f) else hsl[2].coerceIn(0.22f, 0.52f)
+    return ColorUtils.HSLToColor(hsl)
+}
+
 // =====================================================================
 // 封面像素明亮化处理（对标 Salt Player ou0.smali，仅在 flowingLightMode>=1 时使用）
 // =====================================================================
@@ -94,6 +122,61 @@ fun prepareCoverForBackground(bitmap: Bitmap, targetSize: Int = 280): Bitmap {
         }
     }
     return saturated
+}
+
+// =====================================================================
+// 流光色板提取（对标 Salt Player "流光"背景：palette 多色板 → SweepGradient）
+// =====================================================================
+
+/**
+ * 提取流光渐变用色板：
+ *  - palette 全部 swatch 按 population 降序
+ *  - HSL 过滤（过灰/过暗/过亮的剔除，对标 nz0.ԩ 的饱和度校验思想）
+ *  - 色相间隔去重（<22° 视为同色，避免渐变出现相邻近似色带）
+ *  - 饱和度增强（对标 rg View 的 2.5x saturation 思想，流光颜色更鲜艳）
+ */
+fun extractFlowingLightColors(bitmap: Bitmap, count: Int = 5): List<Int> {
+    val scaled = Bitmap.createScaledBitmap(bitmap, 120, 120, false)
+    val palette = Palette.from(scaled).maximumColorCount(16).generate()
+    scaled.recycle()
+
+    val swatches = palette.swatches.sortedByDescending { it.population }
+    val picked = mutableListOf<Int>()
+
+    // 第一轮：HSL 合格的鲜艳色
+    for (s in swatches) {
+        if (picked.size >= count) break
+        val hsl = rgbToHsl(s.rgb)
+        if (hsl[1] in 0.15f..0.95f && hsl[2] in 0.2f..0.85f) picked += s.rgb
+    }
+    // 第二轮：不足时放宽（保证至少 3 色可用）
+    if (picked.size < 3) {
+        for (s in swatches) {
+            if (picked.size >= 3) break
+            if (s.rgb !in picked) picked += s.rgb
+        }
+    }
+
+    // 色相间隔去重（环形距离 <0.06 视为同色相）
+    val deduped = mutableListOf<Int>()
+    for (c in picked) {
+        val h1 = rgbToHsl(c)[0]
+        val tooClose = deduped.any { r ->
+            val h0 = rgbToHsl(r)[0]
+            val d = kotlin.math.abs(h1 - h0)
+            minOf(d, 1f - d) < 0.06f
+        }
+        if (!tooClose) deduped += c
+    }
+
+    // 饱和度增强 + 亮度钳位，保证流光鲜艳可辨
+    return deduped.map { c ->
+        val hsl = FloatArray(3)
+        ColorUtils.colorToHSL(c, hsl)
+        hsl[1] = (hsl[1] * 1.35f).coerceIn(0.35f, 0.85f)
+        hsl[2] = hsl[2].coerceIn(0.38f, 0.62f)
+        ColorUtils.HSLToColor(hsl)
+    }
 }
 
 // =====================================================================
@@ -246,6 +329,7 @@ fun extractDominantColor(bitmap: Bitmap): Int {
     return dominantColor
 }
 
+/** 颜色量化：将 RGB 各通道截断到高 4 位（步长 16），用于直方图统计时聚合相近色。 */
 fun quantizeColor(color: Int): Int {
     val r = ((color shr 16) and 0xFF) and 0xF0
     val g = ((color shr 8) and 0xFF) and 0xF0
@@ -253,6 +337,7 @@ fun quantizeColor(color: Int): Int {
     return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
 }
 
+/** 手动 RGB→HSL 转换（避免依赖平台色空间差异），返回 [h, s, l]（h 归一化到 0~1）。 */
 fun rgbToHsl(color: Int): FloatArray {
     val r = ((color shr 16) and 0xFF) / 255f
     val g = ((color shr 8) and 0xFF) / 255f
@@ -282,6 +367,7 @@ fun rgbToHsl(color: Int): FloatArray {
 // 颜色变体工具
 // =====================================================================
 
+/** 按因子压暗颜色：各 RGB 通道乘以 (1-factor)，alpha 保持不变。 */
 fun darkenColor(color: Color, factor: Float): Color {
     val r = (color.red * (1f - factor))
     val g = (color.green * (1f - factor))
@@ -289,6 +375,7 @@ fun darkenColor(color: Color, factor: Float): Color {
     return Color(r, g, b, color.alpha)
 }
 
+/** 按因子提亮颜色：向白色按比例插值（每个通道 + (1-channel)*factor）。 */
 fun lightenColor(color: Color, factor: Float): Color {
     val r = color.red + ((1f - color.red) * factor)
     val g = color.green + ((1f - color.green) * factor)
@@ -296,11 +383,13 @@ fun lightenColor(color: Color, factor: Float): Color {
     return Color(r, g, b, color.alpha)
 }
 
+/** 依据人眼感知亮度（BT.601 权重）判断颜色是否偏暗，供前景文字选色使用。 */
 fun isColorDark(color: Color): Boolean {
     val luminance = (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue)
     return luminance < 0.5f
 }
 
+/** 把任意颜色转为极浅的柔和背景色：饱和度压到 ≤0.12、亮度固定 0.97，用于卡片底。 */
 fun Color.toSoftBackground(): Color {
     val hsl = FloatArray(3)
     ColorUtils.colorToHSL(this.toArgb(), hsl)
@@ -311,6 +400,10 @@ fun Color.toSoftBackground(): Color {
     return Color(ColorUtils.HSLToColor(hsl))
 }
 
+/**
+ * 将主题色调和为播放页背景色：亮色源色压低饱和度与亮度，
+ * 暗色源色提高亮度到 0.85，保证背景与前景（白色文字）对比度足够。
+ */
 fun harmonizeToPlayerBackground(colorInt: Int): Color {
     val hsl = FloatArray(3)
     ColorUtils.colorToHSL(colorInt, hsl)
@@ -326,5 +419,55 @@ fun harmonizeToPlayerBackground(colorInt: Int): Color {
         hsl[2] = 0.85f
     }
 
+    return Color(ColorUtils.HSLToColor(hsl))
+}
+
+// =====================================================================
+// 安卓版椒盐"流光"封面预处理
+// 浅色流光 = prepareCoverForBackground（2.5x 饱和 + 暗色雾白化，见上）
+// 深色流光 = 2.5x 饱和 + 整体压暗（保留色相，前景用白色）
+// =====================================================================
+
+/** 深色流光的压暗矩阵（RGB 缩放 0.45） */
+private val DARKEN_MATRIX = ColorMatrix(
+    floatArrayOf(
+        0.45f, 0f, 0f, 0f, 0f,
+        0f, 0.45f, 0f, 0f, 0f,
+        0f, 0f, 0.45f, 0f, 0f,
+        0f, 0f, 0f, 1f, 0f,
+    )
+)
+
+/** 安卓版椒盐深色流光：缩放 → 2.5x 饱和度 → 压暗（不做像素级雾白化） */
+fun prepareCoverDarkForBackground(bitmap: Bitmap, targetSize: Int = 140): Bitmap {
+    val scaled = Bitmap.createScaledBitmap(bitmap, targetSize, targetSize, false)
+
+    val cm = ColorMatrix()
+    cm.setSaturation(SATURATION_BOOST)
+    cm.postConcat(DARKEN_MATRIX)
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    paint.colorFilter = ColorMatrixColorFilter(cm)
+
+    val out = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(out)
+    canvas.drawBitmap(scaled, 0f, 0f, paint)
+    if (scaled !== out) scaled.recycle()
+    return out
+}
+
+// =====================================================================
+// 主题色色阶（背景"整体度"关键：底色与 tint 统一为主题色系）
+// =====================================================================
+
+/**
+ * 生成主题色的色阶变体：固定亮度、缩放饱和度。
+ * 背景底色/tint 全部用同一色相的变体，保证背景整体感（椒盐 HazeTint 的做法）。
+ */
+fun themeToneVariant(color: Color, saturationScale: Float, lightness: Float): Color {
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(color.toArgb(), hsl)
+    hsl[1] = (hsl[1] * saturationScale).coerceIn(0f, 1f)
+    hsl[2] = lightness
     return Color(ColorUtils.HSLToColor(hsl))
 }

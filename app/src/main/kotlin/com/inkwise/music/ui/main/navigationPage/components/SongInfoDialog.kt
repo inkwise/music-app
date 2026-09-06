@@ -1,3 +1,8 @@
+/**
+ * 歌曲信息查看弹窗模块。
+ * 以只读对话框展示歌曲的技术元数据（标题/艺术家/专辑/时长/编码/采样率/位深/
+ * 声道/码率）及音频指纹；指纹支持长按复制，便于用户反馈问题或比对同一首歌。
+ */
 package com.inkwise.music.ui.main.navigationPage.components
 
 import android.content.ClipData
@@ -28,6 +33,16 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.inkwise.music.data.model.Song
 
+/**
+ * "歌曲信息"只读对话框。
+ *
+ * 交互说明：内容区可垂直滚动；取不到值的技术字段（编码/采样率/位深/声道/码率）
+ * 自动隐藏，避免出现一排空行；音频指纹区域长按可复制到剪贴板并 Toast 提示；
+ * 点击"关闭"按钮或对话框外部即触发 [onDismiss]。
+ *
+ * @param song 待展示的歌曲数据
+ * @param fingerprint 音频指纹字符串，为空时不显示指纹区块
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongInfoDialog(
@@ -62,6 +77,7 @@ fun SongInfoDialog(
                 }
                 InfoRow("专辑", song.album)
                 InfoRow("时长", formatDuration(song.duration))
+                // 以下技术字段可能缺失，仅在值有效时才展示对应行
                 if (song.codec.isNotBlank()) {
                     InfoRow("编码", song.codec.uppercase())
                 }
@@ -92,6 +108,7 @@ fun SongInfoDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
+                            // 长按指纹 → 复制到剪贴板并提示；onClick 留空避免误触
                             .combinedClickable(
                                 onClick = {},
                                 onLongClick = {
@@ -113,6 +130,10 @@ fun SongInfoDialog(
     )
 }
 
+/**
+ * 信息条目行：左侧标签占 35% 宽度、右侧值占 65%，
+ * 用固定权重保证各行的标签与值纵向对齐。
+ */
 @Composable
 private fun InfoRow(label: String, value: String) {
     Row(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -130,6 +151,7 @@ private fun InfoRow(label: String, value: String) {
     }
 }
 
+// 把毫秒时长格式化为 "分:秒"（秒不足两位补零），如 254000 -> "4:14"
 private fun formatDuration(durationMs: Long): String {
     val totalSeconds = durationMs / 1000
     val minutes = totalSeconds / 60
@@ -137,6 +159,7 @@ private fun formatDuration(durationMs: Long): String {
     return "%d:%02d".format(minutes, seconds)
 }
 
+// 把码率格式化为可读文本：达到 1000 以上显示为 kbps，否则保留 bps
 private fun formatBitrate(bitrate: Int): String {
     return if (bitrate >= 1000) {
         "%.0f kbps".format(bitrate / 1000.0)

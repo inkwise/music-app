@@ -1,3 +1,11 @@
+/*
+ * 用户资料页（UserProfileScreen）
+ *
+ * 展示当前登录用户的头像、用户名、用户 ID、邮箱，并支持：
+ * 1. 更换头像：系统相册选图 -> 走 AuthViewModel.uploadAvatar() 上传；
+ *    头像请求带 Authorization 头且禁用缓存，配合 avatarVersion 强制刷新。
+ * 2. 退出登录：清除本地认证数据并回调 onLogout 返回登录界面。
+ */
 package com.inkwise.music.ui.main.navigationPage.auth
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,6 +51,7 @@ import coil.request.ImageRequest
 import com.inkwise.music.data.prefs.PreferencesManagerEntryPoint
 import kotlinx.coroutines.launch
 
+/** 用户资料页主界面：展示个人信息、头像上传与退出登录 */
 @Composable
 fun UserProfileScreen(
     onLogout: () -> Unit,
@@ -50,6 +59,7 @@ fun UserProfileScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // 通过 EntryPoint 在 Compose 中直接获取 PreferencesManager，读取用户的资料流
     val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(
         context,
         PreferencesManagerEntryPoint::class.java
@@ -59,22 +69,26 @@ fun UserProfileScreen(
     val username by prefs.username.collectAsState(initial = null)
     val email by prefs.email.collectAsState(initial = null)
     val userId by prefs.userId.collectAsState(initial = null)
-    val serverUrl by prefs.serverUrl.collectAsState(initial = "http://127.0.0.1:8080/api/v1")
+    // serverUrl 已规范化为纯主机形式，头像等 API 路径统一显式补 /api/v1
+    val serverUrl by prefs.serverUrl.collectAsState(initial = com.inkwise.music.data.prefs.PreferencesManager.DEFAULT_SERVER_URL)
     val token by prefs.authToken.collectAsState(initial = null)
     val avatarVersion by prefs.avatarVersion.collectAsState(initial = 0L)
 
     val uiState by authViewModel.uiState.collectAsState()
 
+    // 进入页面即拉取最新资料（头像、邮箱等）
     LaunchedEffect(Unit) {
         authViewModel.loadProfile()
     }
 
+    // 登录态失效时（如被登出）回调跳转回登录页
     LaunchedEffect(isLoggedIn) {
         if (!isLoggedIn) {
             onLogout()
         }
     }
 
+    // 系统相册选择器：选图成功后立即把内容 URI 交给 ViewModel 上传
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -97,12 +111,13 @@ fun UserProfileScreen(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 头像区域
+                // 头像区域：右上角叠加相机按钮（或上传中指示器）
                 Box(contentAlignment = Alignment.BottomEnd) {
                     if (!uiState.avatarUrl.isNullOrEmpty() && token != null) {
+                        // 有头像且已登录：带鉴权头加载头像；v=avatarVersion 用于强制绕过缓存
                         AsyncImage(
                             model = ImageRequest.Builder(context)
-                                .data("${serverUrl.trimEnd('/')}/profile/avatar?v=$avatarVersion")
+                                .data("${serverUrl.trimEnd('/')}/api/v1/profile/avatar?v=$avatarVersion")
                                 .addHeader("Authorization", "Bearer $token")
                                 .diskCachePolicy(CachePolicy.DISABLED)
                                 .memoryCachePolicy(CachePolicy.DISABLED)
@@ -114,6 +129,7 @@ fun UserProfileScreen(
                             contentScale = ContentScale.Crop
                         )
                     } else {
+                        // 未设置头像时显示默认占位图标
                         Icon(
                             Icons.Default.AccountCircle,
                             contentDescription = null,
@@ -123,11 +139,13 @@ fun UserProfileScreen(
                     }
 
                     if (uiState.isUploadingAvatar) {
+                        // 上传中：用加载圈替换相机按钮，防止重复点击
                         CircularProgressIndicator(
                             modifier = Modifier.size(28.dp),
                             strokeWidth = 2.dp
                         )
                     } else {
+                        // 相机按钮：调起系统图片选择器（只接受图片）
                         IconButton(
                             onClick = { imagePicker.launch("image/*") },
                             modifier = Modifier.size(28.dp)
@@ -177,6 +195,7 @@ fun UserProfileScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // 退出登录按钮：清除本地认证数据 + 断开 WebSocket，随后回调返回登录页
         Button(
             onClick = {
                 scope.launch {

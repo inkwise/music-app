@@ -77,7 +77,11 @@ android {
     }
 
     buildTypes {
-
+        debug {
+            // 用 release 签名：debug 包可直接覆盖安装 release 版（签名一致），
+            // 同时保留可调试属性
+            signingConfig = signingConfigs.getByName("release")
+        }
 
         release {
         	//签名
@@ -149,6 +153,9 @@ dependencies {
 
 	// MMKV for persistent key-value storage
 	implementation("com.tencent:mmkv:1.3.5")
+
+	// 单元测试
+	testImplementation("junit:junit:4.13.2")
 
     // Accompanist Lyrics - karaoke-style lyric rendering
 

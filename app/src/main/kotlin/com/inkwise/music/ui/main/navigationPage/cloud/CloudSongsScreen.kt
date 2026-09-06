@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.inkwise.music.R
 import com.inkwise.music.data.model.Song
+import com.inkwise.music.ui.main.navigationPage.components.DeleteConfirmDialog
 import com.inkwise.music.ui.main.navigationPage.components.MultiSelectBottomBar
 import com.inkwise.music.ui.main.navigationPage.components.PlaylistPickerSheet
 import com.inkwise.music.ui.main.navigationPage.components.SongActionSheet
@@ -58,6 +59,15 @@ import com.inkwise.music.ui.main.navigationPage.local.SongItem
 import com.inkwise.music.ui.main.navigationPage.local.formatTime
 import com.inkwise.music.ui.player.PlayerViewModel
 
+/**
+ * 云端歌曲页。
+ *
+ * 文件职责：以 Compose 实现云端歌曲列表的完整交互——加载/刷新/排序/拖拽重排、
+ * 多选删除与加歌单、单曲操作（下一首播放/信息/编辑/删除）、上传入口。
+ * 数据层逻辑全部委托给 [CloudViewModel]。
+ */
+
+/** 云端排序枚举 → 通用排序面板模式，复用本地页的 SortBottomSheet */
 private fun CloudSortBy.toSortMode(): SortMode = when (this) {
     CloudSortBy.CUSTOM -> SortMode.CUSTOM
     CloudSortBy.TITLE -> SortMode.TITLE
@@ -65,6 +75,7 @@ private fun CloudSortBy.toSortMode(): SortMode = when (this) {
     CloudSortBy.CREATED_DESC -> SortMode.ADDED_DESC
 }
 
+/** 通用排序面板模式 → 云端排序枚举 */
 private fun SortMode.toCloudSortBy(): CloudSortBy = when (this) {
     SortMode.CUSTOM -> CloudSortBy.CUSTOM
     SortMode.TITLE -> CloudSortBy.TITLE
@@ -72,6 +83,13 @@ private fun SortMode.toCloudSortBy(): CloudSortBy = when (this) {
     SortMode.ADDED_DESC -> CloudSortBy.CREATED_DESC
 }
 
+/**
+ * 云端歌曲页主界面。
+ *
+ * 视图结构：顶部工具栏（随机播放/歌曲数、上传、排序、多选入口）→
+ * 下拉刷新列表（加载中/错误重试/歌曲列表三态）→ 多选底部栏 → 各类弹层
+ * （排序面板、歌单选择器、歌曲信息弹窗、单曲操作面板）。
+ */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 fun CloudSongsScreen(
@@ -106,6 +124,8 @@ fun CloudSongsScreen(
         }
     )
 
+    var songToDelete by remember { mutableStateOf<Song?>(null) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showSortSheet by remember { mutableStateOf(false) }
     var actionSong by remember { mutableStateOf<Song?>(null) }
     var infoSong by remember { mutableStateOf<Song?>(null) }
@@ -117,10 +137,12 @@ fun CloudSongsScreen(
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     var showPlaylistPicker by remember { mutableStateOf(false) }
 
+    /** 全选/取消全选：已全选则清空，否则选中全部歌曲 */
     fun toggleSelectAll() {
         selectedIds = if (selectedIds.size == uiState.songs.size) emptySet() else uiState.songs.map { it.id }.toSet()
     }
 
+    /** 退出多选模式并清空选中集合 */
     fun exitMultiSelect() {
         multiSelectMode = false
         selectedIds = emptySet()
@@ -128,6 +150,7 @@ fun CloudSongsScreen(
 
     val selectedSongs = uiState.songs.filter { it.id in selectedIds }
 
+    // 上传页：直接整页替换当前画面，返回或上传完成后刷新列表
     if (showUpload) {
         UploadScreen(
             onBack = {
@@ -136,6 +159,20 @@ fun CloudSongsScreen(
             },
             onUploadComplete = { cloudViewModel.refresh() }
         )
+        return
+    }
+
+    // ── 会话校验门卫 ──
+    // 本地残留 token 可能已在服务端失效（过期/服务端换密钥），入口拦截无法识别这种场景。
+    // 首次服务端请求返回前只渲染居中加载圈——工具栏（上传按钮）与空列表绝不提前露面；
+    // 若是 401，全局 requireLogin 事件会随即把页面替换为登录页，用户看不到任何"闪现"
+    if (uiState.sessionState != CloudSessionState.VALID) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
         return
     }
 
@@ -148,6 +185,7 @@ fun CloudSongsScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 多选模式：显示全选/已选数量/取消；普通模式：显示随机播放与上传/排序/多选入口
             if (multiSelectMode) {
                 TextButton(onClick = { toggleSelectAll() }) {
                     Text(
@@ -239,6 +277,7 @@ fun CloudSongsScreen(
                 )
             }
         ) {
+            // 列表三态：首载转圈 / 加载失败可重试 / 正常列表（含拖拽重排）
             when {
                 uiState.isLoading && uiState.songs.isEmpty() -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -294,9 +333,7 @@ fun CloudSongsScreen(
             MultiSelectBottomBar(
                 selectedCount = selectedIds.size,
                 onDelete = {
-                    cloudViewModel.deleteCloudSongs(selectedIds.toList())
-                    Toast.makeText(context, "已删除 ${selectedIds.size} 首", Toast.LENGTH_SHORT).show()
-                    exitMultiSelect()
+                    showBatchDeleteDialog = true
                 },
                 onAddToPlaylist = { showPlaylistPicker = true },
                 onPlaySelected = {
@@ -307,7 +344,28 @@ fun CloudSongsScreen(
         }
     }
 
-    // ── 排序面板 ──
+    // ── 批量永久删除确认 ──
+    if (showBatchDeleteDialog) {
+        DeleteConfirmDialog(
+            count = selectedSongs.size,
+            onConfirm = {
+                cloudViewModel.deleteCloudSongs(selectedIds.toList()) { success, total ->
+                    Toast.makeText(
+                        context,
+                        if (success == total) "已删除 $total 首"
+                        else if (success == 0) "删除失败，请检查网络后重试"
+                        else "已删除 $success 首，${total - success} 首删除失败",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                showBatchDeleteDialog = false
+                exitMultiSelect()
+            },
+            onDismiss = { showBatchDeleteDialog = false },
+        )
+    }
+
+    // ── 排序面板：选中即切换排序并重新加载 ──
     if (showSortSheet) {
         SortBottomSheet(
             currentMode = uiState.sortBy.toSortMode(),
@@ -319,22 +377,26 @@ fun CloudSongsScreen(
         )
     }
 
-    // ── 歌单选择器 ──
+    // ── 歌单选择器：把多选中的歌曲批量加入所选云端歌单 ──
     if (showPlaylistPicker) {
         PlaylistPickerSheet(
             playlists = cloudPlaylists,
             onSelect = { playlistId ->
-                selectedIds.forEach { songId ->
-                    homeViewModel.addSongToPlaylist(playlistId, songId)
+                // 单协程顺序批量加歌单，按真实成功数反馈（原先逐首各起协程并发打服务端）
+                homeViewModel.addSongsToPlaylist(playlistId, selectedIds.toList()) { ok, total ->
+                    Toast.makeText(
+                        context,
+                        if (ok == total) "已添加 $total 首到歌单" else "已添加 $ok/$total 首到歌单",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
-                Toast.makeText(context, "已添加 ${selectedIds.size} 首到歌单", Toast.LENGTH_SHORT).show()
                 showPlaylistPicker = false
             },
             onDismiss = { showPlaylistPicker = false }
         )
     }
 
-    // ── 歌曲信息弹窗 ──
+    // ── 歌曲信息弹窗：打开时异步加载该歌的指纹用于展示 ──
     LaunchedEffect(infoSong) {
         val song = infoSong
         infoFingerprint = if (song != null) {
@@ -352,7 +414,25 @@ fun CloudSongsScreen(
         )
     }
 
-    // ── 单曲操作 ──
+    // ── 单曲永久删除确认 ──
+    songToDelete?.let { song ->
+        DeleteConfirmDialog(
+            songTitle = song.title,
+            onConfirm = {
+                cloudViewModel.deleteCloudSongs(listOf(song.id)) { success, _ ->
+                    Toast.makeText(
+                        context,
+                        if (success > 0) "已删除: ${song.title}" else "删除失败，请检查网络后重试",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                songToDelete = null
+            },
+            onDismiss = { songToDelete = null },
+        )
+    }
+
+    // ── 单曲操作面板：下一首播放/信息/编辑/删除/加歌单/跳转专辑 ──
     actionSong?.let { song ->
         SongActionSheet(
             song = song,
@@ -368,8 +448,7 @@ fun CloudSongsScreen(
             },
             onEditInfo = { mainViewModel.navigateToEditSong(song.id) },
             onDelete = {
-                cloudViewModel.deleteCloudSongs(listOf(song.id))
-                Toast.makeText(context, "已删除: ${song.title}", Toast.LENGTH_SHORT).show()
+                songToDelete = song
             },
             onAddToPlaylist = { playlistId ->
                 homeViewModel.addSongToPlaylist(playlistId, song.id)

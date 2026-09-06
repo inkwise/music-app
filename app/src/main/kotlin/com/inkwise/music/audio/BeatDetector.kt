@@ -1,3 +1,16 @@
+/*
+ * BeatDetector.kt
+ *
+ * 节拍检测单例：以 ~60fps 周期从 BASS 当前通道读取 FFT2048 频谱数据，
+ * 输出"整体节拍强度"（基于谱通量 spectral flux 的归一化强度）与
+ * 24 个对数频带能量（约 20Hz~20kHz），供可视化 / 动效联动订阅。
+ *
+ * 线程模型：轮询任务运行在 Default 调度器的后台协程中，读取 BASS 通道
+ * 数据是只读操作，可与主线程的播放控制并发。开始/停止由播放核心在
+ * 播放 / 暂停时调用。
+ *
+ * 状态来源：所有 StateFlow 在 stop() 时清零复位，避免残留上一首歌的节拍数据。
+ */
 package com.inkwise.music.audio
 
 import com.un4seen.bass.BASS
@@ -19,9 +32,19 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sqrt
 
+/**
+ * 节拍 / 频谱检测单例。
+ *
+ * 对外暴露两个 StateFlow：[beatIntensity]（0~1 的整体节拍强度）与
+ * [frequencyBands]（24 个对数频带能量，各 0~1），供 UI 动效、可视化订阅。
+ * 内部维护谱通量历史与各频带平滑均值，用"当前通量 / 历史均值"的比值判定节拍。
+ */
 object BeatDetector {
 
+    /** Default 调度器协程作用域：FFT 计算不阻塞主线程 */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** 周期轮询任务；start 时创建，stop 时取消 */
     private var pollJob: Job? = null
 
     // Overall beat intensity (still useful for some global effects)
@@ -49,6 +72,15 @@ object BeatDetector {
     // Smoothing — keep per-band running averages
     private val bandSmooth = FloatArray(24)
 
+    // 复用的帧级缓冲：computeFrame 只在单一轮询协程中运行，无需同步；
+    // 每帧新建 FloatArray 会以 ~60 次/秒的频率制造 GC 压力
+    private val magScratch = FloatArray(1024)
+    private val rawBandScratch = FloatArray(24)
+
+    /**
+     * 开始检测（幂等）：复位所有内部状态后启动 ~60fps 的轮询任务。
+     * 播放开始时由播放核心调用；无活动通道时轮询退化为衰减清零。
+     */
     fun start() {
         if (pollJob != null) return
         prevFrameValid = false
@@ -66,6 +98,7 @@ object BeatDetector {
         }
     }
 
+    /** 停止检测并清零节拍强度 / 频带能量 / 平滑状态。播放暂停或停止时调用 */
     fun stop() {
         pollJob?.cancel()
         pollJob = null
@@ -75,6 +108,11 @@ object BeatDetector {
         for (i in bandSmooth.indices) bandSmooth[i] = 0f
     }
 
+    /**
+     * 计算一帧：从 BASS 通道读取 FFT2048 数据 → 计算 24 频带能量（指数平滑+归一化）→
+     * 计算整体节拍强度（谱通量与历史均值的比值映射到 0~1）。
+     * 无通道或数据不足时调用 [decayAll] 使指标自然衰减，而不是突兀归零。
+     */
     private fun computeFrame() {
         val handle = com.inkwise.music.player.BassEngine.getChannelHandle()
         if (handle == 0) {
@@ -93,18 +131,19 @@ object BeatDetector {
         val totalBins = result / 4 - 1
         if (totalBins < 50) { decayAll(); return }
 
-        // Read FFT magnitudes
-        val magnitudes = FloatArray(totalBins.coerceAtMost(1024))
-        for (i in magnitudes.indices) {
+        // Read FFT magnitudes（复用缓冲，见 magScratch 注释）
+        val binCount = totalBins.coerceAtMost(magScratch.size)
+        val magnitudes = magScratch
+        for (i in 0 until binCount) {
             magnitudes[i] = if (fftBuffer.remaining() >= 4) abs(fftBuffer.float) else 0f
         }
 
         // ── Compute 24 band energies ─────────────────────────────
-        val rawBands = FloatArray(24)
+        val rawBands = rawBandScratch
         for (bi in bandBins.indices) {
             val range = bandBins[bi]
-            val start = range.first.coerceIn(0, magnitudes.size - 1)
-            val end = range.last.coerceIn(start, magnitudes.size - 1)
+            val start = range.first.coerceIn(0, binCount - 1)
+            val end = range.last.coerceIn(start, binCount - 1)
             if (end <= start) continue
             var sum = 0f
             for (i in start..end) sum += magnitudes[i] * magnitudes[i]
@@ -123,7 +162,7 @@ object BeatDetector {
         // ── Compute overall beat intensity (spectral flux) ───────
         var spectralFlux = 0f
         if (prevFrameValid) {
-            for (i in 0 until min(128, totalBins)) {
+            for (i in 0 until min(128, binCount)) {
                 val diff = magnitudes[i] - prevMagnitudes[i]
                 if (diff > 0) {
                     val w = if (i < 16) 3.5f else if (i < 32) 1.5f else 0.5f
@@ -131,7 +170,7 @@ object BeatDetector {
                 }
             }
         }
-        magnitudes.copyInto(prevMagnitudes, 0, 0, min(128, magnitudes.size))
+        magnitudes.copyInto(prevMagnitudes, 0, 0, min(128, binCount))
         prevFrameValid = true
 
         if (spectralFlux < 1e-10f) {
@@ -148,6 +187,7 @@ object BeatDetector {
         _beatIntensity.value = (logRatio * 2.2f).coerceIn(0f, 1f)
     }
 
+    /** 无有效数据帧时：让节拍强度与频带能量按各自系数衰减，避免静音时指标跳动 */
     private fun decayAll() {
         _beatIntensity.value = decaySingle(_beatIntensity.value)
         val cur = _frequencyBands.value
@@ -156,14 +196,17 @@ object BeatDetector {
         for (i in bandSmooth.indices) bandSmooth[i] *= 0.9f
     }
 
+    /** 单值衰减：小于阈值直接清零，否则每次乘 0.8（约 5 帧衰减到零） */
     private fun decaySingle(v: Float): Float = if (v > 0.01f) max(0f, v * 0.8f) else 0f
 
+    /** 把当前谱通量写入环形历史缓冲；写满一圈后标记历史已填充（均值才可信） */
     private fun updateFluxHistory(flux: Float) {
         fluxHistory[fluxHistoryIdx] = flux
         fluxHistoryIdx = (fluxHistoryIdx + 1) % fluxHistory.size
         if (fluxHistoryIdx == 0) fluxHistoryFilled = true
     }
 
+    /** 计算谱通量历史均值：未填满时对已有样本求平均，填满后对整个环形缓冲求平均 */
     private fun computeFluxAverage(): Float {
         if (!fluxHistoryFilled) {
             val count = fluxHistoryIdx.coerceAtLeast(1)
@@ -173,6 +216,10 @@ object BeatDetector {
     }
 
     // ── Logarithmic band computation ─────────────────────────────
+    /**
+     * 计算 24 个对数频带的 FFT bin 区间：从 20Hz 到奈奎斯特频率按 log2 等比切分，
+     * 使低频分辨率更细、高频更粗（与人耳感知接近）。44100Hz/2048 点下 bin 宽约 21.53Hz。
+     */
     private fun buildBandRanges(
         bandCount: Int, sampleRate: Float, fftSize: Int,
     ): List<IntRange> {

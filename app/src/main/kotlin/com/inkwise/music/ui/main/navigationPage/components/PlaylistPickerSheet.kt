@@ -1,3 +1,7 @@
+/**
+ * 歌单选择底部弹层模块。
+ * 列出用户全部歌单（含各自的歌曲数量），点击某一项即把目标歌曲加入该歌单。
+ */
 package com.inkwise.music.ui.main.navigationPage.components
 
 import androidx.compose.foundation.clickable
@@ -24,6 +28,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.inkwise.music.data.model.PlaylistWithSongs
 
+/**
+ * "添加到歌单"歌单选择弹层。
+ * 每行左侧为歌单图标、中间为歌单名称、右侧为该歌单的歌曲数量；点击任意一行
+ * 立即通过 [onSelect] 返回该歌单 ID（执行加入歌单与关闭弹层由调用方负责）。
+ *
+ * @param playlists 全部歌单及其歌曲列表
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaylistPickerSheet(
@@ -50,6 +61,7 @@ fun PlaylistPickerSheet(
 
             HorizontalDivider()
 
+            // 歌单列表：点击行即选中该歌单
             playlists.forEach { playlist ->
                 Row(
                     modifier = Modifier

@@ -1,5 +1,12 @@
 package com.inkwise.music.ui.main.navigationPage.settings
 
+/**
+ * 播放设置页（PlaybackSettings）。
+ *
+ * 提供与播放行为相关的开关：音频焦点（与其他应用抢占播放权）、
+ * 播放/暂停淡入淡出、边听边存（流式缓存）、缓存占用查看与清理、
+ * 以及单声道播放。设置项通过 [PlaybackSettingsViewModel] 读写持久化与播放器。
+ */
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +38,7 @@ fun PlaybackSettingsScreen(
     val monoEnabled by viewModel.monoEnabled.collectAsState()
     val cacheSize by viewModel.cacheSize.collectAsState()
 
+    // 页面首次进入时统计一次缓存占用，避免沿用上一次会话的旧数值
     LaunchedEffect(Unit) {
         viewModel.refreshCacheSize()
     }

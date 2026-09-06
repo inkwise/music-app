@@ -1,3 +1,10 @@
+/*
+ * 搜索页（SearchScreen）
+ *
+ * 提供关键词输入联想/搜索：结果按"歌曲 / 歌手 / 专辑"三组分区展示，
+ * 点击结果分别跳转到云端歌曲、歌手主页、专辑页。
+ * 搜索为云端接口（需登录），输入采用 300ms 防抖（见 SearchViewModel）。
+ */
 package com.inkwise.music.ui.main.navigationPage.search
 
 import androidx.compose.animation.AnimatedVisibility
@@ -39,6 +46,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 
+/**
+ * 搜索页主界面：搜索框 + 分组结果列表，含加载中、错误、无结果三种占位状态。
+ * 离开页面时通过 DisposableEffect 清空 ViewModel 状态，避免残留旧结果。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
@@ -48,9 +59,12 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    // 用于进入页面后自动弹出软键盘并聚焦搜索框
     val focusRequester = remember { FocusRequester() }
 
+    // 进入页面立即聚焦搜索框
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    // 离开页面时清空关键词与搜索结果
     DisposableEffect(Unit) {
         onDispose { viewModel.clear() }
     }
@@ -77,6 +91,7 @@ fun SearchScreen(
 
         Spacer(Modifier.height(12.dp))
 
+        // 加载中占位
         if (state.isLoading) {
             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -84,11 +99,13 @@ fun SearchScreen(
             return@Column
         }
 
+        // 请求失败时展示错误信息
         state.error?.let { error ->
             Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             return@Column
         }
 
+        // 未搜索过、或搜索后三组结果都为空时，显示"无搜索结果"占位
         if (!state.hasSearched || (state.titles.isEmpty() && state.artists.isEmpty() && state.albums.isEmpty())) {
             if (state.keyword.isNotBlank()) {
                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -98,6 +115,7 @@ fun SearchScreen(
             return@Column
         }
 
+        // 分组结果：歌曲 / 歌手 / 专辑 三个分区，各自非空才渲染对应分组
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             if (state.titles.isNotEmpty()) {
                 item {
@@ -138,6 +156,7 @@ fun SearchScreen(
     }
 }
 
+/** 结果分组的标题（"歌曲"/"歌手"/"专辑"），使用主色加粗以区隔内容 */
 @Composable
 private fun SectionHeader(title: String) {
     Text(
@@ -148,6 +167,7 @@ private fun SectionHeader(title: String) {
     )
 }
 
+/** 单条搜索结果行：左侧类型符号 + 右侧主文本/副文本，整行可点击 */
 @Composable
 private fun SearchItem(
     text: String,

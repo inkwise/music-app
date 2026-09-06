@@ -1,3 +1,15 @@
+/*
+ * 本地歌曲页（LocalSongsScreen）
+ *
+ * 职责：展示设备上的本地音乐列表，并提供以下能力：
+ * 1. 扫描本地音乐（媒体库快速扫描 / 全盘详细扫描，需运行时音频权限或"所有文件"权限）
+ * 2. 播放：单击播放、随机播放全部
+ * 3. 排序：标题 / 添加时间 / 自定义拖拽排序（拖拽结束防抖保存）
+ * 4. 多选模式：全选、批量加入歌单、批量播放、批量永久删除
+ * 5. 单曲操作：下一首播放、查看歌曲信息（含音频指纹）、编辑信息、删除
+ *
+ * 数据来源：LocalViewModel（扫描 + Room 持久化），播放控制走 PlayerViewModel。
+ */
 package com.inkwise.music.ui.main.navigationPage.local
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -54,6 +66,7 @@ import com.inkwise.music.R
 import com.inkwise.music.data.model.Song
 import com.inkwise.music.hasAllFilesPermission
 import com.inkwise.music.requestAllFilesPermission
+import com.inkwise.music.ui.main.navigationPage.components.DeleteConfirmDialog
 import com.inkwise.music.ui.main.navigationPage.components.MultiSelectBottomBar
 import com.inkwise.music.ui.main.navigationPage.components.PlaylistPickerSheet
 import com.inkwise.music.ui.main.navigationPage.components.SongActionSheet
@@ -65,6 +78,7 @@ import com.inkwise.music.ui.main.MainViewModel
 import com.inkwise.music.ui.main.navigationPage.home.HomeViewModel
 import com.inkwise.music.ui.player.PlayerViewModel
 
+/** 读取本地音频所需的运行时权限：Android 13+ 用细粒度的 READ_MEDIA_AUDIO，旧版本退回 READ_EXTERNAL_STORAGE */
 private val mediaPermission =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         Manifest.permission.READ_MEDIA_AUDIO
@@ -72,6 +86,12 @@ private val mediaPermission =
         Manifest.permission.READ_EXTERNAL_STORAGE
     }
 
+/**
+ * 本地歌曲页主界面。
+ *
+ * 聚合了 4 个 ViewModel：playerViewModel（播放/队列）、localViewModel（扫描/排序/删除）、
+ * homeViewModel（歌单数据与添加歌曲）、mainViewModel（页面跳转路由）。
+ */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 fun LocalSongsScreen(
@@ -95,7 +115,9 @@ fun LocalSongsScreen(
     val isCustomSort = sortMode == SortMode.CUSTOM
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    // 拖拽结束后的持久化任务句柄：连续拖拽时取消旧任务，实现防抖保存
     var saveJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // 拖拽排序手势状态：拖动时实时交换列表项位置（onMove），松手后延迟落盘（onDragEnd）
     val dragReorderState = rememberDragReorderState(
         listState = listState,
         itemCount = songs.size,
@@ -109,17 +131,21 @@ fun LocalSongsScreen(
         }
     )
 
+    // 各类弹窗/浮层的锚点状态：非空即显示对应 UI
     var actionSong by remember { mutableStateOf<Song?>(null) }
     var infoSong by remember { mutableStateOf<Song?>(null) }
     var infoFingerprint by remember { mutableStateOf<String?>(null) }
     var showScanDialog by remember { mutableStateOf(false) }
     var showSortSheet by remember { mutableStateOf(false) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
+    var songToDelete by remember { mutableStateOf<Song?>(null) }
 
     // ── 多选状态 ──
     var multiSelectMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     var showPlaylistPicker by remember { mutableStateOf(false) }
 
+    // 运行时权限申请回调：授权成功立即开始媒体库扫描，被拒则提示原因
     val mediaPermissionLauncher =
         rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
@@ -131,9 +157,11 @@ fun LocalSongsScreen(
             }
         }
 
+    // 检查当前是否已持有音频读取权限
     fun hasMediaPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, mediaPermission) == PackageManager.PERMISSION_GRANTED
 
+    // 触发扫描的统一入口：已有权限直接扫描，否则先走权限申请流程
     fun requestScanOrPermission() {
         if (hasMediaPermission()) {
             localViewModel.scanSongs(context)
@@ -142,15 +170,18 @@ fun LocalSongsScreen(
         }
     }
 
+    // 全选 / 取消全选：已全选时清空，否则选中全部歌曲
     fun toggleSelectAll() {
         selectedIds = if (selectedIds.size == songs.size) emptySet() else songs.map { it.id }.toSet()
     }
 
+    // 退出多选模式并清空选中集合，避免残留旧选中项
     fun exitMultiSelect() {
         multiSelectMode = false
         selectedIds = emptySet()
     }
 
+    // 依据选中 ID 从完整列表反查出 Song 对象，供批量播放 / 批量添加歌单 / 批量删除使用
     val selectedSongs = songs.filter { it.id in selectedIds }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -254,10 +285,12 @@ fun LocalSongsScreen(
                 }
             ) {
                 if (isScanning && songs.isEmpty()) {
+                    // 首次扫描尚未产出结果时显示加载圈（已有歌曲时则用顶部刷新指示器表达进度）
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 } else {
+                    // 歌曲列表：key 绑定 song.id 以保证拖拽重排与删除时动画/复用正确
                     LazyColumn(state = listState) {
                         itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
                             SongItem(
@@ -277,6 +310,7 @@ fun LocalSongsScreen(
                                     else
                                         selectedIds + song.id
                                 },
+                                // 仅在"自定义排序"模式下附加长按拖拽手势
                                 modifier = if (isCustomSort) {
                                     dragReorderState.dragModifier(index)
                                 } else Modifier
@@ -291,9 +325,7 @@ fun LocalSongsScreen(
                 MultiSelectBottomBar(
                     selectedCount = selectedIds.size,
                     onDelete = {
-                        localViewModel.deleteSongsPermanently(selectedSongs, context)
-                        Toast.makeText(context, "已删除 ${selectedIds.size} 首", Toast.LENGTH_SHORT).show()
-                        exitMultiSelect()
+                        showBatchDeleteDialog = true
                     },
                     onAddToPlaylist = { showPlaylistPicker = true },
                     onPlaySelected = {
@@ -322,10 +354,14 @@ fun LocalSongsScreen(
         PlaylistPickerSheet(
             playlists = localPlaylists,
             onSelect = { playlistId ->
-                selectedIds.forEach { songId ->
-                    homeViewModel.addSongToPlaylist(playlistId, songId)
+                // 单协程顺序批量加歌单，按真实成功数反馈（原先逐首各起协程并发打服务端）
+                homeViewModel.addSongsToPlaylist(playlistId, selectedIds.toList()) { ok, total ->
+                    Toast.makeText(
+                        context,
+                        if (ok == total) "已添加 $total 首到歌单" else "已添加 $ok/$total 首到歌单",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
-                Toast.makeText(context, "已添加 ${selectedIds.size} 首到歌单", Toast.LENGTH_SHORT).show()
                 showPlaylistPicker = false
             },
             onDismiss = { showPlaylistPicker = false }
@@ -362,6 +398,7 @@ fun LocalSongsScreen(
     }
 
     // ── 歌曲信息弹窗 ──
+    // 打开信息弹窗时异步读取该歌曲的音频指纹；关闭时清空，避免下次弹窗闪现旧数据
     LaunchedEffect(infoSong) {
         val song = infoSong
         infoFingerprint = if (song != null) {
@@ -376,6 +413,33 @@ fun LocalSongsScreen(
                 infoSong = null
                 infoFingerprint = null
             },
+        )
+    }
+
+    // ── 批量永久删除确认 ──
+    if (showBatchDeleteDialog) {
+        DeleteConfirmDialog(
+            count = selectedSongs.size,
+            onConfirm = {
+                localViewModel.deleteSongsPermanently(selectedSongs, context)
+                Toast.makeText(context, "已删除 ${selectedIds.size} 首", Toast.LENGTH_SHORT).show()
+                showBatchDeleteDialog = false
+                exitMultiSelect()
+            },
+            onDismiss = { showBatchDeleteDialog = false },
+        )
+    }
+
+    // ── 单曲永久删除确认 ──
+    songToDelete?.let { song ->
+        DeleteConfirmDialog(
+            songTitle = song.title,
+            onConfirm = {
+                localViewModel.deleteSong(song, context)
+                Toast.makeText(context, "已删除: ${song.title}", Toast.LENGTH_SHORT).show()
+                songToDelete = null
+            },
+            onDismiss = { songToDelete = null },
         )
     }
 
@@ -395,8 +459,7 @@ fun LocalSongsScreen(
             },
             onEditInfo = { mainViewModel.navigateToEditSong(song.id) },
             onDelete = {
-                localViewModel.deleteSong(song)
-                Toast.makeText(context, "已删除: ${song.title}", Toast.LENGTH_SHORT).show()
+                songToDelete = song
             },
             onAddToPlaylist = { playlistId ->
                 homeViewModel.addSongToPlaylist(playlistId, song.id)

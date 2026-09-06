@@ -1,10 +1,20 @@
 package com.inkwise.music
+
+/**
+ * 应用全局入口 [Application]。
+ *
+ * 负责进程启动时的一次性初始化：MMKV 键值库、Coil 图片加载器（自动携带
+ * Bearer token）、播放器管理器、同步播放管理器、恢复上次播放状态、
+ * 指纹后台扫描与全局崩溃捕获。同时内置 IO 工具方法，以及崩溃日志
+ * 记录与展示用的 [CrashHandler] / [CrashActivity]。
+ */
 import android.app.Activity
 import android.app.Application
 import android.content.*
 import android.content.pm.PackageInfo
 import android.content.res.Resources
 import android.graphics.Typeface
+import com.inkwise.music.ui.main.CoverFlightBootstrap
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -30,19 +40,22 @@ import java.util.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
+/** 标注为 Hilt 注入的应用类，Dagger 将在此生成全局单例图。 */
 @HiltAndroidApp
 class MusicApp : Application() {
+    /** 应用启动回调：按依赖顺序完成全局管理器初始化与状态恢复。 */
     override fun onCreate() {
         super.onCreate()
         MMKV.initialize(this)
 
+        // 从 Hilt 单例图中取应用级组件（Application 无法直接 @Inject 到需要它的管理器）
         val entryPoint = EntryPoints.get(this, MusicAppEntryPoint::class.java)
         // 设置全局 Coil ImageLoader，自动为图片请求添加 Bearer token
         coil.Coil.setImageLoader(entryPoint.imageLoader)
 
         MusicPlayerManager.init(this, entryPoint.prefsManager, entryPoint.audioEffectManager, entryPoint.streamCacheManager)
 
-        // 初始化同步播放管理器
+        // 初始化同步播放管理器：WebSocket 用长超时，适应弱网下的 NTP 时钟校准长连接
         val wsOkHttpClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -55,6 +68,37 @@ class MusicApp : Application() {
         CrashHandler.instance.registerGlobal(this)
     }
 
+    /**
+     * 同步预解码当前歌封面（冷启动首拖的飞行封面兜底）。
+     * 仅处理本地来源：albumArt 文件直接解码，缺失时读音频内嵌封面；
+     * 网络封面不阻塞启动，走后续异步加载。
+     */
+    private fun decodeCoverSynchronously(song: com.inkwise.music.data.model.Song?) {
+        if (song == null) return
+        val albumArt = song.albumArt
+        if (!albumArt.isNullOrBlank()) {
+            if (albumArt.startsWith("http")) return
+            runCatching { android.graphics.BitmapFactory.decodeFile(albumArt) }.getOrNull()?.let {
+                CoverFlightBootstrap.cachedUri = albumArt
+                CoverFlightBootstrap.cachedBitmap = it
+                return
+            }
+        }
+        val path = song.path.ifBlank { song.uri.removePrefix("file://") }
+        if (path.isBlank() || path.startsWith("http") || !java.io.File(path).exists()) return
+        runCatching {
+            val retriever = android.media.MediaMetadataRetriever()
+            retriever.setDataSource(path)
+            val bytes = retriever.embeddedPicture
+            retriever.release()
+            bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+        }.getOrNull()?.let {
+            CoverFlightBootstrap.cachedUri = albumArt ?: path
+            CoverFlightBootstrap.cachedBitmap = it
+        }
+    }
+
+    /** 恢复上次退出时的播放队列与进度，让用户能继续收听。 */
     private fun restoreSavedPlaybackState() {
         val entryPoint = EntryPoints.get(this, MusicAppEntryPoint::class.java)
         val prefs = entryPoint.prefsManager
@@ -69,15 +113,19 @@ class MusicApp : Application() {
             val songs = saved.queueIds.mapNotNull { songDao.getSongById(it) }
             if (songs.isNotEmpty()) {
                 MusicPlayerManager.restorePlaybackState(songs, saved.currentIndex, saved.lastPosition)
+                // 同步预解码当前歌封面：冷启动首拖（早于一切异步图片加载）也有图可飞
+                decodeCoverSynchronously(songs.getOrNull(saved.currentIndex))
             }
         }
     }
 
     companion object {
         init {
+            // 加载音频分析 JNI 库：音频指纹与节奏分析等能力依赖该原生库，注意名称不带 .so
             System.loadLibrary("audio_analyzer") // 注意不要 .so
         }
 
+        /** 通用流拷贝工具：以 8KB 缓冲将输入流逐段复制到输出流。 */
         @Throws(IOException::class)
         fun write(
             input: InputStream,
@@ -90,11 +138,13 @@ class MusicApp : Application() {
             }
         }
 
+        /** 将字节数组写入文件：自动创建父目录，便于写日志等场景。 */
         @Throws(IOException::class)
         fun write(
             file: File,
             data: ByteArray,
         ) {
+            // 父目录不存在时先创建，避免 FileOutputStream 抛 FileNotFoundException
             file.parentFile?.takeIf { !it.exists() }?.mkdirs()
             ByteArrayInputStream(data).use { input ->
                 FileOutputStream(file).use { output ->
@@ -103,6 +153,7 @@ class MusicApp : Application() {
             }
         }
 
+        /** 将输入流整体读取为 UTF-8 字符串，用于读取 /proc/version 等文本文件。 */
         @Throws(IOException::class)
         fun toString(input: InputStream): String {
             ByteArrayOutputStream().use { output ->
@@ -111,6 +162,7 @@ class MusicApp : Application() {
             }
         }
 
+        /** 批量安全关闭可关闭资源：逐个 try-catch，单个失败不影响其余资源。 */
         fun closeIO(vararg closeables: Closeable?) {
             closeables.forEach {
                 try {
@@ -121,14 +173,24 @@ class MusicApp : Application() {
         }
     }
 
+    /**
+     * 全局崩溃处理器。
+     *
+     * 注册为系统默认 UncaughtExceptionHandler 后，未捕获异常会先写入本地
+     * 崩溃日志（含设备/系统/版本信息），再跳转到 [CrashActivity] 展示，
+     * 随后结束进程；回退链路确保写入自身也失败时交给原默认处理器。
+     */
     class CrashHandler private constructor() {
         companion object {
+            /** 系统原有的默认异常处理器，用于回退转发。 */
             val DEFAULT_HANDLER: UncaughtExceptionHandler? =
                 Thread.getDefaultUncaughtExceptionHandler()
 
+            /** 单例：全局仅需要一个崩溃处理器。 */
             val instance: CrashHandler by lazy { CrashHandler() }
         }
 
+        /** 把本类实现的异常处理器注册为全局默认。 */
         fun registerGlobal(
             context: Context,
             crashDir: String? = null,
@@ -138,10 +200,12 @@ class MusicApp : Application() {
             )
         }
 
+        /** 恢复系统默认异常处理器（一般用于退出时还原现场）。 */
         fun unregister() {
             Thread.setDefaultUncaughtExceptionHandler(DEFAULT_HANDLER)
         }
 
+        /** 真正的异常处理实现：负责格式化日志、写盘并跳转崩溃展示页。 */
         private class UncaughtExceptionHandlerImpl(
             private val context: Context,
             crashDir: String?,
@@ -161,6 +225,7 @@ class MusicApp : Application() {
                 throwable: Throwable,
             ) {
                 try {
+                    // 组装崩溃上下文并写入日志，随后尝试展示到独立 Activity
                     val log = buildLog(throwable)
                     writeLog(log)
 
@@ -184,6 +249,7 @@ class MusicApp : Application() {
                 }
             }
 
+            /** 组装崩溃日志：时间、设备、系统、应用版本与内核信息 + 完整堆栈。 */
             private fun buildLog(t: Throwable): String {
                 val time = dateFormat.format(Date())
 
@@ -227,6 +293,7 @@ class MusicApp : Application() {
                 }
             }
 
+            /** 把崩溃日志写入外部缓存目录下的 crash/ 文件夹，文件名带时间戳便于排查。 */
             private fun writeLog(log: String) {
                 val time = dateFormat.format(Date())
                 val file = File(crashDirFile, "crash_$time.txt")
@@ -237,6 +304,7 @@ class MusicApp : Application() {
                 }
             }
 
+            /** 读取内核版本信息（/proc/version），失败时降级为 "unknown"。 */
             private fun getKernel(): String =
                 try {
                     MusicApp.toString(FileInputStream("/proc/version")).trim()
@@ -246,6 +314,7 @@ class MusicApp : Application() {
         }
     }
 
+    /** 崩溃展示页：全屏展示崩溃日志文本，支持复制与重启应用。 */
     class CrashActivity : Activity() {
         private var logText: String? = null
 
@@ -280,6 +349,7 @@ class MusicApp : Application() {
             setContentView(scrollView)
         }
 
+        /** 重启应用：拉起启动器主入口后结束当前崩溃页与进程。 */
         private fun restart() {
             packageManager.getLaunchIntentForPackage(packageName)?.let {
                 it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -291,6 +361,7 @@ class MusicApp : Application() {
         }
 
         override fun onBackPressed() {
+            // 崩溃页不允许直接退出，返回键等同“重启应用”
             restart()
         }
 
@@ -310,6 +381,7 @@ class MusicApp : Application() {
             return super.onOptionsItemSelected(item)
         }
 
+        /** dp→px 换算：+0.5f 四舍五入，用于给崩溃日志文本计算内边距。 */
         private fun dp2px(dp: Float): Int {
             val scale = Resources.getSystem().displayMetrics.density
             return (dp * scale + 0.5f).toInt()

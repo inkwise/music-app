@@ -1,5 +1,12 @@
 package com.inkwise.music.di
 
+/**
+ * Coil 图片加载器的 Hilt 提供模块。
+ *
+ * 构建全局单例 [ImageLoader]：配好带超时的 OkHttpClient，并通过拦截器为每个
+ * 图片请求自动附加 `Authorization: Bearer <token>`（用于鉴权后访问音乐封面等资源），
+ * 同时提供 50MB 磁盘缓存。
+ */
 import android.content.Context
 import coil.ImageLoader
 import coil.disk.DiskCache
@@ -17,6 +24,7 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object CoilModule {
 
+    /** 提供全局共享的 ImageLoader 单例，带鉴权拦截器与磁盘缓存。 */
     @Provides
     @Singleton
     fun provideImageLoader(
@@ -26,6 +34,7 @@ object CoilModule {
         val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
+            // 鉴权拦截器：缓存了 token 就给请求头加 Bearer，否则原样放行
             .addInterceptor { chain ->
                 val token = prefs.cachedAuthToken
                 val request = if (token != null) {

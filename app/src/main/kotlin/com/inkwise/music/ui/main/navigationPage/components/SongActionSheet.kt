@@ -1,3 +1,9 @@
+/**
+ * 歌曲操作底部弹层模块。
+ * 长按歌曲后弹出的快捷操作面板：顶部展示歌曲信息（支持一键复制歌名），
+ * 下方列出常用操作；点击"添加到歌单"会在同一弹层内切换出歌单选择列表，
+ * 选中歌单后立即回调并收起弹层。
+ */
 package com.inkwise.music.ui.main.navigationPage.components
 
 import android.content.ClipData
@@ -46,6 +52,19 @@ import com.inkwise.music.data.model.PlaylistWithSongs
 import com.inkwise.music.data.model.Song
 import kotlinx.coroutines.launch
 
+/**
+ * 歌曲操作底部弹层（ModalBottomSheet）。
+ *
+ * 交互说明：
+ * - 顶部显示歌名（点击复制按钮写入剪贴板并 Toast 提示）与可点击的艺术家名；
+ * - 中部为操作列表：添加到歌单、下一首播放、查看专辑、歌曲信息、编辑歌曲信息、删除；
+ * - 删除文案随 [isInPlaylist] 变化——在歌单内显示"从歌单中删除"，否则为"永久删除"；
+ * - 每个操作都会先动画收起弹层（sheetState.hide）再回调 onDismiss，保证返回动画流畅。
+ *
+ * @param song 当前操作的歌曲
+ * @param playlists 可供选择的歌单列表（用于"添加到歌单"二级列表）
+ * @param isInPlaylist 歌曲当前是否位于歌单中，决定删除按钮的语义
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SongActionSheet(
@@ -66,6 +85,7 @@ fun SongActionSheet(
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    // 是否展开"添加到歌单"的二级歌单选择视图；为 false 时显示默认操作列表
     var showPlaylistPicker by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
@@ -95,6 +115,7 @@ fun SongActionSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                // 复制按钮：把歌名写入系统剪贴板并用 Toast 反馈
                 IconButton(onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val clip = ClipData.newPlainText("song_title", song.title)
@@ -112,6 +133,7 @@ fun SongActionSheet(
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
             // 操作列表
+            // 二级视图：列出全部歌单，点击即加入该歌单并关闭弹层
             if (showPlaylistPicker) {
                 Text(
                     text = "选择歌单",
@@ -233,6 +255,10 @@ fun SongActionSheet(
     }
 }
 
+/**
+ * 弹层内的单行操作项：左侧图标 + 右侧文字，整行可点击。
+ * 抽取为私有组件以统一各操作项的内边距、图标尺寸与字体样式。
+ */
 @Composable
 private fun ActionRow(
     icon: ImageVector,

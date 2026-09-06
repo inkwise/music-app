@@ -1,3 +1,10 @@
+/**
+ * 首页（Home）模块 —— 歌单列表页。
+ *
+ * 结构：顶部固定"本地歌曲 / 云端歌曲"快捷入口卡片与"刷新歌单 / 创建歌单"操作栏，
+ * 下方为可滚动的歌单列表（按云端 / 本地分区展示），空态时显示引导文案。
+ * 点击歌单进入详情页，创建歌单通过 [PlaylistTitleDialog] 输入标题。
+ */
 package com.inkwise.music.ui.main.navigationPage.home
 
 import android.graphics.Bitmap
@@ -54,6 +61,9 @@ import coil.size.Precision
 import com.inkwise.music.R
 import com.inkwise.music.data.model.PlaylistWithSongs
 
+/**
+ * 首页主界面：展示快捷入口、刷新/创建按钮，以及云端与本地两个分区的歌单卡片列表。
+ */
 @Composable
 fun HomeScreen(
     onNavigateToLocal: () -> Unit,
@@ -65,6 +75,7 @@ fun HomeScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
 
+    // 未登录时不展示云端歌单分区，避免出现无法同步的"僵尸"云端歌单
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
     val cloudPlaylists = if (isLoggedIn) playlists.filter { it.playlist.cloudId != null } else emptyList()
     val localPlaylists = playlists.filter { it.playlist.cloudId == null }
@@ -156,6 +167,7 @@ fun HomeScreen(
     )
 }
 
+/** 顶部快捷入口行：本地歌曲与云端歌曲两个并排的入口卡片 */
 @Composable
 private fun QuickEntryRow(
     onNavigateToLocal: () -> Unit,
@@ -182,6 +194,7 @@ private fun QuickEntryRow(
     }
 }
 
+/** 操作栏：左侧"刷新歌单"（同步中显示进度圈并禁用），右侧"创建歌单" */
 @Composable
 private fun ActionButtonsRow(
     isRefreshing: Boolean,
@@ -219,6 +232,7 @@ private fun ActionButtonsRow(
     }
 }
 
+/** 单个快捷入口卡片：左侧圆角图标底 + 右侧标题与副标题 */
 @Composable
 private fun QuickEntryCard(
     icon: ImageVector,
@@ -272,6 +286,7 @@ private fun QuickEntryCard(
     }
 }
 
+/** 歌单列表的分区标题（"云端歌单" / "本地歌单"） */
 @Composable
 private fun PlaylistSectionHeader(title: String) {
     Text(
@@ -283,6 +298,7 @@ private fun PlaylistSectionHeader(title: String) {
     )
 }
 
+/** 歌单卡片：封面（取歌单第一首歌的专辑封面，无则按云端/本地显示图标）、歌单名与歌曲数 */
 @Composable
 private fun PlaylistCard(
     playlist: PlaylistWithSongs,
@@ -301,6 +317,7 @@ private fun PlaylistCard(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 封面来源：歌单内第一首歌的专辑封面；没有则用云端/本地图标占位
             val coverUri = playlist.songs.firstOrNull()?.albumArt
             val isCloud = playlist.playlist.cloudId != null
 
@@ -312,6 +329,7 @@ private fun PlaylistCard(
                 contentAlignment = Alignment.Center
             ) {
                 if (coverUri != null) {
+                    // 缩略图用小尺寸 + RGB_565，降低列表滚动时的内存与解码开销
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(coverUri)

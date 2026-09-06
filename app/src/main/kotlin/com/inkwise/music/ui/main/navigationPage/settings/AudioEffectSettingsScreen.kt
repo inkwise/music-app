@@ -1,5 +1,13 @@
 package com.inkwise.music.ui.main.navigationPage.settings
 
+/**
+ * 音效设置页（AudioEffectSettings）。
+ *
+ * 按功能分组提供 DSP 相关设置项：音频引擎（输出采样率、32 位浮点解码）、
+ * DSP 效果（压限器、音乐厅氛围、V3 混响）、播放控制（变速、抗锯齿滤波）、
+ * DSD 音频（DSD 增益、D2P 采样率）与音量（ReplayGain 音量平衡）。
+ * 状态由 [AudioEffectSettingsViewModel] 持有，写入最终落到 [AudioEffectManager]。
+ */
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -31,19 +39,25 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlin.math.roundToInt
 
-// ── Sample rate options ───────────────────────────────────────────────
+// ── 预置可选参数集 ──────────────────────────────────────────────────
 
+/** 输出采样率候选值（Hz），覆盖 CD 音质到 384kHz 高解析规格。 */
 private val SAMPLE_RATES = listOf(44100, 48000, 96000, 192000, 384000)
+
+/** DSD→PCM（D2P）转换的目标采样率候选值，包含 DSD 常用的整数倍率（88.2k/176.4k/352.8k）。 */
 private val D2P_RATES = listOf(44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000)
+
+/** 变速播放的快捷倍速档位，不改变音高。 */
 private val SPEED_PRESETS = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 4.0f, 8.0f)
 
-// ── Main Screen ───────────────────────────────────────────────────────
+// ── 主界面 ───────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AudioEffectSettingsScreen(
     viewModel: AudioEffectSettingsViewModel = hiltViewModel(),
 ) {
+    // 一次性收集所有音效开关/参数，保证各卡片能与底层 AudioEffectManager 状态实时同步
     val reverbEnabled by viewModel.reverbEnabled.collectAsState()
     val compressorEnabled by viewModel.compressorEnabled.collectAsState()
     val concertHallEnabled by viewModel.concertHallEnabled.collectAsState()
@@ -139,6 +153,7 @@ fun AudioEffectSettingsScreen(
 
                     Spacer(Modifier.height(4.dp))
 
+                    // 连续滑杆：四舍五入到百分位，避免拖动时产生过多无效精度值
                     Slider(
                         value = speed,
                         onValueChange = { viewModel.setSpeed((it * 100).roundToInt() / 100f) },
@@ -168,6 +183,7 @@ fun AudioEffectSettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
+                    // DSD 增益滑杆：0~12dB，11 个步进（每 1dB 一档）
                     Slider(
                         value = dsdGain.toFloat(),
                         onValueChange = { viewModel.setDSDGain(it.roundToInt()) },
@@ -211,8 +227,9 @@ fun AudioEffectSettingsScreen(
     }
 }
 
-// ── Reusable Composables ──────────────────────────────────────────────
+// ── 可复用子组件 ─────────────────────────────────────────────────────
 
+/** 分组标题：主色加粗小字，用于各设置卡片的区块标识。 */
 @Composable
 private fun SectionTitle(text: String) {
     Text(
@@ -224,6 +241,7 @@ private fun SectionTitle(text: String) {
     )
 }
 
+/** 标题 + 副标题 + 开关的标准行布局，用于所有布尔型音效开关。 */
 @Composable
 private fun SwitchRow(
     title: String,
@@ -247,6 +265,10 @@ private fun SwitchRow(
     }
 }
 
+/**
+ * 离散数值选择器：以 FlowRow 流式排布 FilterChip，支持自定义标签格式化
+ * （采样率统一显示为 kHz）。适用于采样率等互斥的枚举型参数。
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChipSelector(

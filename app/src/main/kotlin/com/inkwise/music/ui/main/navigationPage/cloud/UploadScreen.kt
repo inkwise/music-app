@@ -41,6 +41,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.inkwise.music.R
 
+/**
+ * 上传音乐页。
+ *
+ * 文件职责：提供上传 UI——通过系统文件选择器挑选多个音频文件、预览已选列表
+ * （含大小与上传进度条）、发起上传并汇总成功/重复/失败结果提示给用户。
+ * 数据与网络逻辑委托给 [UploadViewModel]。
+ */
 @Composable
 fun UploadScreen(
     onBack: () -> Unit,
@@ -50,6 +57,7 @@ fun UploadScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
+    // 系统文件选择器：支持多选音频，选中后加入待上传列表
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
@@ -58,7 +66,7 @@ fun UploadScreen(
         }
     }
 
-    // Handle upload completion
+    // 上传完成：汇总结果（成功/重复/失败数量）弹 Toast，随后回到云端列表并刷新
     LaunchedEffect(uiState.uploadResponse) {
         uiState.uploadResponse?.let { response ->
             val successCount = response.results.count { it.success }
@@ -74,6 +82,7 @@ fun UploadScreen(
         }
     }
 
+    // 错误提示：出错时弹一次性 Toast
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
             Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
@@ -82,6 +91,7 @@ fun UploadScreen(
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // Header
+        // 顶栏：返回按钮 + 「上传音乐」标题
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -105,6 +115,7 @@ fun UploadScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // File picker button
+        // 选择文件按钮：上传中禁用，已有文件时文案变为「继续添加」
         OutlinedButton(
             onClick = {
                 filePickerLauncher.launch(arrayOf("audio/*"))
@@ -127,6 +138,7 @@ fun UploadScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         // Selected files list
+        // 已选文件列表：显示文件名/大小，上传中显示进度条，空闲时可移除
         if (uiState.selectedFiles.isNotEmpty()) {
             Text(
                 text = "已选择 ${uiState.selectedFiles.size} 个文件",
@@ -137,7 +149,8 @@ fun UploadScreen(
 
             LazyColumn(modifier = Modifier.weight(1f)) {
                 itemsIndexed(uiState.selectedFiles) { index, file ->
-                    val progress = uiState.fileProgress[file.filename] ?: 0f
+                    // 进度按唯一 id 索引（同批同名文件的进度不会互相覆盖）
+                    val progress = uiState.fileProgress[file.id] ?: 0f
                     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -198,6 +211,7 @@ fun UploadScreen(
         }
 
         // Upload progress
+        // 批次进度文案（如「第 1/3 批」）
         if (uiState.isUploading && uiState.uploadProgress.isNotEmpty()) {
             Text(
                 text = uiState.uploadProgress,
@@ -208,6 +222,7 @@ fun UploadScreen(
         }
 
         // Upload button
+        // 底部上传按钮：未选文件或上传中禁用；上传中显示转圈与进度文案
         Button(
             onClick = { viewModel.upload(context) },
             enabled = uiState.selectedFiles.isNotEmpty() && !uiState.isUploading,
@@ -228,6 +243,7 @@ fun UploadScreen(
     }
 }
 
+/** 字节数 → 可读文件大小文案（B/KB/MB） */
 private fun formatFileSize(bytes: Long): String {
     return when {
         bytes < 1024 -> "$bytes B"

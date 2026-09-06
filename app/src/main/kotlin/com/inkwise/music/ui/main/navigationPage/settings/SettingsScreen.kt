@@ -1,5 +1,11 @@
 package com.inkwise.music.ui.main.navigationPage.settings
 
+/**
+ * 设置主页面（Settings）。
+ *
+ * 顶部为自建服务器的地址配置（输入 + 校验 + 保存），下方为四组子设置入口：
+ * UI 设置、播放设置、音效设置、同步播放。子页面导航通过回调交给上层 NavHost 处理。
+ */
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,6 +50,7 @@ fun SettingsScreen(
     onNavigateToSyncPlay: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
+    // 订阅服务器地址输入框内容、保存状态与提示消息
     val uiState by viewModel.uiState.collectAsState()
 
     Column(
@@ -66,6 +73,7 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+                // 校验/保存结果提示（成功为 primary 色，失败为 error 色）
                 val message = uiState.message
                 if (message != null) {
                     Text(
@@ -81,6 +89,7 @@ fun SettingsScreen(
                     enabled = !uiState.isSaving,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    // 保存中显示行内小进度条并禁用按钮，防止重复提交
                     if (uiState.isSaving) {
                         CircularProgressIndicator(
                             modifier = Modifier.width(16.dp).height(16.dp),
@@ -134,6 +143,7 @@ fun SettingsScreen(
     }
 }
 
+/** 设置入口行：图标 + 标题/副标题 + 右侧箭头，整行可点击跳转到对应子设置页。 */
 @Composable
 private fun SettingsItem(
     icon: ImageVector,

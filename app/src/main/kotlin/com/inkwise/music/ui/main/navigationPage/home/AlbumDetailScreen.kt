@@ -1,3 +1,10 @@
+/**
+ * 专辑详情模块 —— 专辑详情页。
+ *
+ * 结构：加载态 / 错误态分支处理；正常态为可下拉刷新的列表，
+ * 头部展示封面、专辑名与随机播放按钮，下方为该专辑的歌曲列表。
+ * 支持单曲操作面板与歌曲信息弹窗。
+ */
 package com.inkwise.music.ui.main.navigationPage.home
 
 import androidx.compose.foundation.layout.Box
@@ -19,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +50,10 @@ import com.inkwise.music.ui.main.navigationPage.components.SongInfoDialog
 import com.inkwise.music.ui.main.navigationPage.local.SongItem
 import com.inkwise.music.ui.player.PlayerViewModel
 
+/**
+ * 专辑详情页：展示专辑封面、名称、随机播放入口与歌曲列表，
+ * 支持下拉刷新，并弹出单曲操作面板 / 歌曲信息弹窗。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumDetailScreen(
@@ -51,9 +63,11 @@ fun AlbumDetailScreen(
 ) {
     val uiState by detailViewModel.uiState.collectAsState()
     val playbackState by playerViewModel.playbackState.collectAsState()
+    // 弹层控制状态：单曲操作面板 / 歌曲信息弹窗
     var actionSong by remember { mutableStateOf<Song?>(null) }
     var infoSong by remember { mutableStateOf<Song?>(null) }
 
+    // 三种视图状态：加载中 / 有错误且无数据 / 正常列表
     Box(modifier = Modifier.fillMaxSize()) {
         when {
             uiState.isLoading -> {
@@ -78,6 +92,7 @@ fun AlbumDetailScreen(
                         }
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            // 头部：封面（无则用占位图标）、专辑名与随机播放按钮
                             item {
                                 Column(
                                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -121,6 +136,7 @@ fun AlbumDetailScreen(
                             }
 
                             itemsIndexed(uiState.songs, key = { _, song -> song.cloudId ?: song.id }) { index, song ->
+                                // 云端歌曲与本地行都可能出现在列表中，因此按 cloudId 优先判断正在播放
                                 SongItem(
                                     song = song,
                                     isPlaying = playbackState.currentSong?.let { current ->
@@ -138,7 +154,7 @@ fun AlbumDetailScreen(
         }
     }
 
-    // Song action sheet
+    // Song action sheet —— 单曲操作面板（专辑页不支持删除/加入歌单等，对应回调为空实现）
     actionSong?.let { song ->
         SongActionSheet(
             song = song,
@@ -154,12 +170,23 @@ fun AlbumDetailScreen(
         )
     }
 
-    // Song info dialog
+    // Song info dialog —— 歌曲详细信息弹窗
+    // 打开时异步读取该歌曲的音频指纹；关闭时清空，避免下次弹窗闪现旧数据
+    var infoFingerprint by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(infoSong) {
+        val song = infoSong
+        infoFingerprint = if (song != null) {
+            detailViewModel.getFingerprint(song.id)
+        } else null
+    }
     infoSong?.let { song ->
         SongInfoDialog(
             song = song,
-            fingerprint = null,
-            onDismiss = { infoSong = null },
+            fingerprint = infoFingerprint,
+            onDismiss = {
+                infoSong = null
+                infoFingerprint = null
+            },
         )
     }
 }

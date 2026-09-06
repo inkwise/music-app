@@ -1,3 +1,9 @@
+/**
+ * 歌曲信息编辑页（UI 层）。
+ * 展示封面与标题/艺术家/专辑/歌词四个输入框，可通过系统相册选择器更换封面；
+ * 页面状态完全来自 [EditSongViewModel]，保存成功或失败均以 Toast 反馈，
+ * 成功后自动返回上一页。
+ */
 package com.inkwise.music.ui.main.navigationPage.components
 
 import android.widget.Toast
@@ -45,6 +51,18 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 
+/**
+ * 歌曲信息编辑页主界面。
+ *
+ * 交互说明：
+ * - 进入页面时由 ViewModel 自动加载数据，加载中整页显示进度圈；
+ * - 点击封面区域调起系统"选择照片"（PickVisualMedia），选中后立即预览；
+ * - 保存按钮仅在标题非空且不在保存中状态时可点击，点击后调用 ViewModel 保存；
+ * - 保存结果通过 LaunchedEffect 监听状态变化统一弹 Toast，成功后自动返回。
+ *
+ * @param onNavigateBack 返回上一页的回调
+ * @param viewModel 由 Hilt 注入的编辑页 ViewModel
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditSongScreen(
@@ -54,12 +72,14 @@ fun EditSongScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
+    // 封面选择器：调起系统选图界面，选中后把 Uri 交给 ViewModel 做预览与保存时写入
     val coverPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         uri?.let { viewModel.onCoverPicked(it) }
     }
 
+    // 监听保存成功事件：提示后返回上一页（LaunchedEffect 以状态为 key，重组不会重复触发）
     LaunchedEffect(uiState.saveSuccess) {
         if (uiState.saveSuccess) {
             Toast.makeText(context, "保存成功", Toast.LENGTH_SHORT).show()
@@ -67,6 +87,7 @@ fun EditSongScreen(
         }
     }
 
+    // 监听错误事件：弹出 Toast 后立即清空错误标记，防止重复弹出
     LaunchedEffect(uiState.error) {
         uiState.error?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
@@ -86,6 +107,7 @@ fun EditSongScreen(
             )
         }
     ) { padding ->
+        // 加载中：整页居中显示进度指示器，不渲染表单
         if (uiState.isLoading) {
             Box(
                 modifier = Modifier
@@ -117,6 +139,7 @@ fun EditSongScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     val coverUri = uiState.coverUri
+                    // 已有封面则铺满显示；否则仅显示灰色占位背景，由右下角相机图标提示可更换
                     if (coverUri != null) {
                         AsyncImage(
                             model = ImageRequest.Builder(context)
@@ -185,6 +208,7 @@ fun EditSongScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
+                    // 标题为空视为无有效内容；保存中禁止重复提交
                     enabled = !uiState.isSaving && uiState.title.isNotBlank(),
                 ) {
                     if (uiState.isSaving) {

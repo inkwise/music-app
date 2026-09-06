@@ -1,50 +1,8 @@
-# Gradle
+app/build/
 .gradle/
 build/
-.kotlin/
 local.properties
-
-# IDE
-.idea/
-*.iml
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
-
-# Android
+*.apk
 captures/
 .externalNativeBuild/
 .cxx/
-*.aab
-*.apk
-output-metadata.json
-*.hprof
-
-# Google Services
-google-services.json
-
-# Build artifacts
-__cmake_systeminformation/
-build_log*.txt
-native/
-
-# Compiled binaries
-*.so
-*.dll
-*.dylib
-*.class
-*.o
-
-# Logs
-*.log
-
-# Environment
-.env
-.env.local
-
-# Claude
-.claude
-CLAUDE.md
-
-# 误放的服务端配置模板
-config.toml

@@ -1,5 +1,14 @@
 package com.inkwise.music.ui.effect
 
+/**
+ * 播放页粒子动效叠加层。
+ *
+ * 依据 [ParticleEffect] 类型在封面外层 Canvas 上绘制四类实时频谱动效：
+ * 星环、鲸鱼粒子、声波脉动、律动几何。动效数据来自 [frequencyBands]
+ * （分频段能量）与 [beatIntensity]（全局节拍强度），并随封面旋转
+ * （圆形封面）或停止（正方形封面）自动切换适配的粒子形态。
+ * 亮色背景下通过 [clr] 自动压低亮度、提高饱和度以保证可见度。
+ */
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -26,6 +35,10 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
+/**
+ * 粒子动效入口：effect 为 NONE 时直接跳过（零开销）；否则启动三档
+ * 无限旋转动画（快/中/慢）作为粒子轨道相位，并在全屏 Canvas 上按效果分发绘制。
+ */
 @Composable
 fun ParticleEffectOverlay(
     effect: ParticleEffect,
@@ -38,8 +51,11 @@ fun ParticleEffectOverlay(
     if (effect == ParticleEffect.NONE) return
 
     val density = LocalDensity.current
+    // 线宽基准：由 dp 换算为像素，保证不同屏幕密度下视觉效果一致
     val sw = with(density) { 2.2f.dp.toPx() }
 
+    // 三档独立旋转：快轨（14s）驱动密集点阵，中轨（20s）驱动几何形状，
+    // 慢轨（32s）反向驱动环绕大元素，叠加出丰富的视差层次
     val rotFast by rememberInfiniteTransition(label = "rF").animateFloat(
         0f, 360f, infiniteRepeatable(tween(14000, easing = LinearEasing), RepeatMode.Restart), "rF"
     )
@@ -51,9 +67,11 @@ fun ParticleEffectOverlay(
     )
 
     Canvas(modifier = modifier.fillMaxSize()) {
+        // 画布几何中心与最大半径：半径取宽高中较小者的 0.44，保证动效不越界
         val cx = size.width / 2f; val cy = size.height / 2f
         val r = minOf(size.width, size.height) * 0.44f
         val il = isLightBackground
+        // band(i)：安全读取第 i 个频段能量，越界按 0 处理（静默期不掉帧）
         val band: (Int) -> Float = { i -> frequencyBands.getOrElse(i) { 0f } }
 
         when (effect) {
@@ -66,6 +84,11 @@ fun ParticleEffectOverlay(
     }
 }
 
+/**
+ * 统一颜色入口：按当前背景明暗自适应调整 HSLA。
+ * 亮色背景（il=true）下把亮度压到 ≤0.38 且饱和度提升到 ≥0.75，
+ * 使浅色粒子在白色背景上仍清晰可辨；暗色背景则原样使用。
+ */
 private fun clr(h: Float, s: Float, l: Float, a: Float, il: Boolean): Color {
     if (il) {
         val adjL = (l * 0.38f).coerceAtMost(0.38f)

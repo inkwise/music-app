@@ -1,3 +1,15 @@
+/*
+ * AudioEffectManager.kt
+ *
+ * 音效与音频参数管理：用 MMKV 持久化用户开启的 DSP 效果与音频配置
+ * （DX8 混响、压限器、音乐厅氛围、DSD 增益、播放倍速、抗锯齿滤波、
+ * DSD→PCM 频率、输出采样率、ReplayGain 音量平衡、32 位浮点解码），
+ * 并在 BASS 通道重建时按当前配置重放效果。
+ *
+ * 生命周期：由 Hilt 注入为单例。FX 句柄与通道绑定——通道释放前必须
+ * 调用 onChannelFreeing() 复位句柄，装载完成后调用 onChannelReady() 重放，
+ * 否则会把效果挂到已释放的句柄上。
+ */
 package com.inkwise.music.data.audio
 
 import android.util.Log
@@ -8,6 +20,17 @@ import com.tencent.mmkv.MMKV
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * 音效与音频参数管理器（单例）。
+ *
+ * 所有开关 / 参数都即时读写 MMKV；按生效方式分三类：
+ *  - 转发给 [BassEngine]：倍速、DSD 增益、浮点解码、抗锯齿滤波
+ *  - 在活动通道上挂 / 摘 BASS FX：混响、压限器、音乐厅氛围
+ *  - 仅保存配置、下次装载时生效：D2P 频率、输出采样率
+ *
+ * 通道生命周期：新通道就绪时由播放核心回调 [onChannelReady] 重放全部效果；
+ * 通道即将释放时回调 [onChannelFreeing] 复位 FX 句柄。
+ */
 @Singleton
 class AudioEffectManager @Inject constructor() {
 
@@ -33,18 +56,22 @@ class AudioEffectManager @Inject constructor() {
         const val DEFAULT_OUTPUT_SAMPLE_RATE = 44100
     }
 
+    /** 本管理器唯一的 MMKV 实例（与其它模块共享 "settings" 存储） */
     private val mmkv = MMKV.mmkvWithID("settings")
 
     // FX handles (per-channel, reset on each new song)
+    // 三个 BASS FX 句柄：与当前 BASS 通道绑定，通道释放前必须复位（见 onChannelFreeing）
     private var reverbFxHandle: Int = 0
     private var compressorFxHandle: Int = 0
     private var concertHallFxHandle: Int = 0
 
     // ── Reverb (existing) ──────────────────────────────────────────
 
+    /** 混响开关是否已开启（读取持久化配置） */
     val isReverbEnabled: Boolean
         get() = mmkv.decodeBool(KEY_DX8_REVERB, false)
 
+    /** 开启 / 关闭混响：写入配置后立即在当前通道上挂或摘 DX8_Reverb 效果 */
     fun setReverbEnabled(enabled: Boolean) {
         mmkv.encode(KEY_DX8_REVERB, enabled)
         if (enabled) applyReverb() else removeReverb()
@@ -52,9 +79,11 @@ class AudioEffectManager @Inject constructor() {
 
     // ── Compressor ──────────────────────────────────────────────────
 
+    /** 压限器是否已开启（读取持久化配置） */
     val isCompressorEnabled: Boolean
         get() = mmkv.decodeBool(KEY_COMPRESSOR, false)
 
+    /** 开启 / 关闭压限器：写入配置后立即在当前通道上挂或摘 Compressor2 效果 */
     fun setCompressorEnabled(enabled: Boolean) {
         mmkv.encode(KEY_COMPRESSOR, enabled)
         if (enabled) applyCompressor() else removeCompressor()
@@ -62,9 +91,11 @@ class AudioEffectManager @Inject constructor() {
 
     // ── Concert Hall Atmosphere (Freeverb) ─────────────────────────
 
+    /** 音乐厅氛围（Freeverb）是否已开启（读取持久化配置） */
     val isConcertHallEnabled: Boolean
         get() = mmkv.decodeBool(KEY_CONCERT_HALL, false)
 
+    /** 开启 / 关闭音乐厅氛围：写入配置后立即在当前通道上挂或摘 Freeverb 效果 */
     fun setConcertHallEnabled(enabled: Boolean) {
         mmkv.encode(KEY_CONCERT_HALL, enabled)
         if (enabled) applyConcertHall() else removeConcertHall()
@@ -72,9 +103,11 @@ class AudioEffectManager @Inject constructor() {
 
     // ── DSD Audio Gain (0 ~ 12 dB) ──────────────────────────────────
 
+    /** 当前配置的 DSD 增益（0~12 dB，读取持久化配置） */
     val dsdGain: Int
         get() = mmkv.decodeInt(KEY_DSD_GAIN, DEFAULT_DSD_GAIN)
 
+    /** 设置 DSD 增益：钳制到 0~12 dB 后写入配置，并立即转发给 BASS（config 级，下一个流生效） */
     fun setDSDGain(dB: Int) {
         val clamped = dB.coerceIn(0, 12)
         mmkv.encode(KEY_DSD_GAIN, clamped)
@@ -83,9 +116,11 @@ class AudioEffectManager @Inject constructor() {
 
     // ── DSP Speed (0.25x ~ 8.0x) ────────────────────────────────────
 
+    /** 当前配置的播放倍速（0.25x ~ 8.0x，读取持久化配置） */
     val speed: Float
         get() = mmkv.decodeFloat(KEY_SPEED, DEFAULT_SPEED)
 
+    /** 设置播放倍速：钳制到 0.25~8.0 后写入配置，并立即应用到当前 Tempo 流 */
     fun setSpeed(value: Float) {
         val clamped = value.coerceIn(0.25f, 8.0f)
         mmkv.encode(KEY_SPEED, clamped)
@@ -94,9 +129,11 @@ class AudioEffectManager @Inject constructor() {
 
     // ── Anti-Alias Filter for Tempo ─────────────────────────────────
 
+    /** 倍速抗锯齿滤波是否已开启（读取持久化配置） */
     val isAntiAliasFilterEnabled: Boolean
         get() = mmkv.decodeBool(KEY_ANTI_ALIAS_FILTER, false)
 
+    /** 设置抗锯齿滤波开关：写入配置后立即应用到当前 Tempo 流 */
     fun setAntiAliasFilterEnabled(enabled: Boolean) {
         mmkv.encode(KEY_ANTI_ALIAS_FILTER, enabled)
         BassEngine.setAntiAliasFilter(enabled)
@@ -104,27 +141,33 @@ class AudioEffectManager @Inject constructor() {
 
     // ── D2P (DSD to PCM conversion frequency) ──────────────────────
 
+    /** 当前配置的 DSD→PCM 转换频率（仅保存配置，下次装载 DSD 流时生效） */
     val d2pHz: Int
         get() = mmkv.decodeInt(KEY_D2P_HZ, DEFAULT_D2P_HZ)
 
+    /** 设置 DSD→PCM 转换频率并持久化 */
     fun setD2PHz(hz: Int) {
         mmkv.encode(KEY_D2P_HZ, hz)
     }
 
     // ── Output Sample Rate ──────────────────────────────────────────
 
+    /** 当前配置的输出采样率（仅保存配置，下次初始化 BASS 时生效） */
     val outputSampleRate: Int
         get() = mmkv.decodeInt(KEY_OUTPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE)
 
+    /** 设置输出采样率并持久化 */
     fun setOutputSampleRate(hz: Int) {
         mmkv.encode(KEY_OUTPUT_SAMPLE_RATE, hz)
     }
 
     // ── Volume Balance (ReplayGain) ─────────────────────────────────
 
+    /** 音量平衡（ReplayGain）是否已开启（读取持久化配置） */
     val isVolumeBalanceEnabled: Boolean
         get() = mmkv.decodeBool(KEY_VOLUME_BALANCE, false)
 
+    /** 开启 / 关闭音量平衡：写入配置后立即在当前通道上应用或恢复 1.0 音量 */
     fun setVolumeBalanceEnabled(enabled: Boolean) {
         mmkv.encode(KEY_VOLUME_BALANCE, enabled)
         if (enabled) applyVolumeBalance() else removeVolumeBalance()
@@ -132,9 +175,11 @@ class AudioEffectManager @Inject constructor() {
 
     // ── 32-bit Float Decode ─────────────────────────────────────────
 
+    /** 32 位浮点解码是否已开启（读取持久化配置） */
     val isFloatDecodeEnabled: Boolean
         get() = mmkv.decodeBool(KEY_FLOAT_DECODE, false)
 
+    /** 设置浮点解码开关：写入配置后立即转发给 BASS（config 级，下一个流生效） */
     fun setFloatDecodeEnabled(enabled: Boolean) {
         mmkv.encode(KEY_FLOAT_DECODE, enabled)
         BassEngine.setFloatDSP(enabled)
@@ -142,7 +187,11 @@ class AudioEffectManager @Inject constructor() {
 
     // ── Channel lifecycle callbacks ─────────────────────────────────
 
-    /** Called by the player when a new BASS channel is ready. */
+    /**
+     * 新 BASS 通道装载完成后由播放核心回调：
+     * 按当前配置重放所有开关类效果（混响 / 压限 / 音乐厅 / 抗锯齿）、
+     * 重新应用倍速（所有通道现在都是 Tempo 流）与音量平衡。
+     */
     fun onChannelReady() {
         if (isReverbEnabled) applyReverb()
         if (isCompressorEnabled) applyCompressor()
@@ -154,14 +203,17 @@ class AudioEffectManager @Inject constructor() {
         if (isVolumeBalanceEnabled) applyVolumeBalance()
     }
 
-    /** Called by the player when the current channel is about to be freed. */
+    /**
+     * 当前通道即将被释放前由播放核心回调：
+     * 复位三个 FX 句柄——通道释放后这些句柄即失效，防止下次重放时误挂到悬空句柄。
+     */
     fun onChannelFreeing() {
         reverbFxHandle = 0
         compressorFxHandle = 0
         concertHallFxHandle = 0
     }
 
-    /** Release all effects. */
+    /** 释放全部效果（混响 / 压限 / 音乐厅）；应用退出或引擎释放时调用 */
     fun release() {
         removeReverb()
         removeCompressor()
@@ -170,6 +222,7 @@ class AudioEffectManager @Inject constructor() {
 
     // ── Private: Reverb ────────────────────────────────────────────
 
+    /** 在活动通道上挂 DX8_Reverb 效果（已挂过则跳过）；通道未就绪时只告警不重试 */
     private fun applyReverb() {
         if (reverbFxHandle != 0) return
         val channel = BassEngine.getChannelHandle()
@@ -183,6 +236,7 @@ class AudioEffectManager @Inject constructor() {
         }
     }
 
+    /** 从活动通道摘下混响并复位句柄（通道已释放则跳过 BASS 调用） */
     private fun removeReverb() {
         if (reverbFxHandle == 0) return
         val channel = BassEngine.getChannelHandle()
@@ -195,6 +249,7 @@ class AudioEffectManager @Inject constructor() {
 
     // ── Private: Compressor ────────────────────────────────────────
 
+    /** 在活动通道上挂 Compressor2 压限器并设置一组听感自然的默认参数（增益/阈值/压缩比/起音/释放） */
     private fun applyCompressor() {
         if (compressorFxHandle != 0) return
         val channel = BassEngine.getChannelHandle()
@@ -222,6 +277,7 @@ class AudioEffectManager @Inject constructor() {
         }
     }
 
+    /** 从活动通道摘下压限器并复位句柄 */
     private fun removeCompressor() {
         if (compressorFxHandle == 0) return
         val channel = BassEngine.getChannelHandle()
@@ -234,6 +290,7 @@ class AudioEffectManager @Inject constructor() {
 
     // ── Private: Concert Hall (Freeverb) ───────────────────────────
 
+    /** 在活动通道上挂 Freeverb 音乐厅氛围效果，并写入与 Salt Player 对齐的固定混响参数 */
     private fun applyConcertHall() {
         if (concertHallFxHandle != 0) return
         val channel = BassEngine.getChannelHandle()
@@ -262,6 +319,7 @@ class AudioEffectManager @Inject constructor() {
         }
     }
 
+    /** 从活动通道摘下音乐厅氛围效果并复位句柄 */
     private fun removeConcertHall() {
         if (concertHallFxHandle == 0) return
         val channel = BassEngine.getChannelHandle()
@@ -274,6 +332,7 @@ class AudioEffectManager @Inject constructor() {
 
     // ── Private: Volume Balance ─────────────────────────────────────
 
+    /** 从流标签读取 REPLAYGAIN_TRACK_GAIN，换算成线性音量系数（0.1~2.0）应用到当前通道 */
     private fun applyVolumeBalance() {
         val channel = BassEngine.getChannelHandle()
         if (channel == 0) return
@@ -288,6 +347,7 @@ class AudioEffectManager @Inject constructor() {
         Log.d(TAG, "音量平衡: replayGain=${rgGain}dB volumeFactor=$volumeFactor ok=$ok")
     }
 
+    /** 关闭音量平衡：把通道音量恢复为 1.0（满音量） */
     private fun removeVolumeBalance() {
         val channel = BassEngine.getChannelHandle()
         if (channel != 0) {

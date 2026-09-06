@@ -1,3 +1,15 @@
+/*
+ * BassEngine.kt
+ *
+ * BASS 音频引擎封装单例：负责 BASS 库的初始化与释放、按 URI scheme
+ * （file / content / http(s)）创建解码流、可选地用 BASS_FX Tempo 流包装以支持倍速，
+ * 并提供播放控制（play / pause / stop / seek / 进度时长查询）与 DSP 配置
+ * （倍速、DSD 增益、32 位浮点解码、单声道下混、ReplayGain 标签读取）。
+ *
+ * 线程模型：通道句柄可能被 IO 线程的 load 与主线程的 play/pause/查询并发访问，
+ * 写入统一收口在 loadLock 内，读取依赖 @Volatile 保证可见性。
+ * SYNC_END 回调运行在 BASS native 线程，其中不得调用 BASS_StreamFree 等释放类接口。
+ */
 package com.inkwise.music.player
 
 import android.content.Context
@@ -25,6 +37,7 @@ object BassEngine {
     // DSD gain config ID (undocumented but functional in BASSDSD add-on)
     private const val BASS_CONFIG_DSD_GAIN = 0x10801
 
+    /** 引擎是否已成功初始化（幂等保护 + release 后复位） */
     private var initialized = false
 
     // 通道句柄可能被 IO 线程的 load 与其他线程的 play/pause/查询并发访问：
@@ -35,14 +48,21 @@ object BassEngine {
     @Volatile private var decodeChannel: Int = 0           // decode stream (only when useTempo)
     @Volatile private var endSyncHandle: Int = 0
     @Volatile private var isTempoStream: Boolean = false
+
+    /** BASS 初始化使用的采样率；init 时写入，供查询与后续重建参考 */
     private var currentSampleRate: Int = 44100
 
+    /** 主线程协程作用域（当前仅用于内部状态流转，保留以备异步回调使用） */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    /** 播放中标志：由 play/pause 与播放结束同步回调共同维护（UI 可直接订阅） */
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    /** 播放结束回调（由 MusicPlayerManager 注册，用于切到下一首）；在 native 线程被调用 */
     private var endCallback: (() -> Unit)? = null
+
+    /** 应用上下文，仅用于 content:// 协议打开文件描述符与落盘临时文件 */
     private var appContext: Context? = null
 
     /** Initialize BASS audio engine. Call once during service startup. */
@@ -97,6 +117,11 @@ object BassEngine {
         }
     }
 
+    /**
+     * 实际执行装载（调用方已持有 [loadLock]）。
+     * 按 URI scheme 选择创建方式；需要倍速控制时把解码流包装成 Tempo 流。
+     * 创建前先释放旧通道，避免 double-free 或悬空句柄。
+     */
     private fun loadLocked(uri: String, flags: Int, useTempo: Boolean): Boolean {
 
         freeActiveChannel()
@@ -324,6 +349,11 @@ object BassEngine {
         Log.d(TAG, "BASS 引擎已释放")
     }
 
+    /**
+     * 释放当前输出通道及（若使用 Tempo 流）其底层解码流。
+     * 释放前先移除结束同步回调，避免释放过程中仍触发 SYNC_END。
+     * 必须在 loadLock 内调用，禁止在 BASS 回调线程中调用。
+     */
     private fun freeActiveChannel() {
         // Free output channel (tempo or raw stream)
         val ch = activeChannel
@@ -343,6 +373,10 @@ object BassEngine {
         }
     }
 
+    /**
+     * 在活动通道上注册 SYNC_END 同步回调，用于感知"播放到结尾"。
+     * 回调只更新播放标志并转发给外部 endCallback，不做任何通道释放。
+     */
     private fun setupEndSync() {
         val ch = activeChannel
         if (ch == 0) return
@@ -362,6 +396,12 @@ object BassEngine {
         )
     }
 
+    /**
+     * 通过 ContentResolver 创建 content:// 流。
+     * 优先用文件描述符（零拷贝、无需落盘）；若媒体提供方不支持直读，
+     * 则退化为拷贝到 cache 目录的临时文件再按路径创建，用完即删。
+     * 返回 0 表示创建失败。
+     */
     private fun createStreamFromContentUri(uri: String, flags: Int): Int {
         val ctx = appContext ?: return 0
         try {

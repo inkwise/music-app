@@ -1,5 +1,11 @@
 package com.inkwise.music.ui.main.navigationPage.settings
 
+/**
+ * 同步播放设置页（SyncPlaySettings）。
+ *
+ * 展示本机设备信息、主机/从机角色控制开关、同一账号下的其他在线设备列表，
+ * 以及操作结果提示卡片。所有状态来源于 [SyncPlayViewModel] 暴露的 [SyncPlayUiState]。
+ */
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,10 +48,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.inkwise.music.data.network.model.SyncDeviceInfo
 import com.inkwise.music.sync.SyncPlayManager.Role
 
+/** 同步播放设置页入口：以滚动列的形式纵向堆叠信息卡、控制卡、设备列表卡与消息卡。 */
 @Composable
 fun SyncPlaySettingsScreen(
     viewModel: SyncPlayViewModel = hiltViewModel()
 ) {
+    // 订阅 ViewModel 的唯一 UI 状态源，任何字段变化都会触发重组
     val uiState by viewModel.uiState.collectAsState()
 
     Column(
@@ -78,6 +86,7 @@ fun SyncPlaySettingsScreen(
     }
 }
 
+/** 本机信息卡片：显示设备名称、设备 ID 与与同步服务器的连接状态（绿=已连接，灰=未连接）。 */
 @Composable
 private fun DeviceInfoCard(uiState: SyncPlayUiState) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -101,6 +110,7 @@ private fun DeviceInfoCard(uiState: SyncPlayUiState) {
     }
 }
 
+/** 同步控制卡片：根据当前角色（未启用/主机/从机）渲染不同的控制面板。 */
 @Composable
 private fun SyncControlCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewModel) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -131,6 +141,7 @@ private fun SyncControlCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewMod
                 Spacer(Modifier.height(16.dp))
 
                 if (uiState.isLoading) {
+                    // 启用同步的握手过程较长，用行内小进度条代替可点击按钮避免重复提交
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -230,6 +241,7 @@ private fun SyncControlCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewMod
     }
 }
 
+/** 设备列表卡片：列出同一账号下除本机外的所有设备，并显示在线数量。 */
 @Composable
 private fun DeviceListCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewModel) {
     val devices = uiState.syncDevices
@@ -269,6 +281,10 @@ private fun DeviceListCard(uiState: SyncPlayUiState, viewModel: SyncPlayViewMode
     }
 }
 
+/**
+ * 单个设备行：显示设备名、在线状态、角色标签与同步/最后活跃详情。
+ * 仅当本机为主机、目标设备在线且为从机时，才展示“同步开关 + 踢出”管理操作。
+ */
 @Composable
 private fun DeviceRow(
     device: SyncDeviceInfo,
@@ -329,6 +345,7 @@ private fun DeviceRow(
     }
 }
 
+/** 操作结果提示卡片：根据 [isError] 切换错误/正常配色，右上角按钮可关闭提示。 */
 @Composable
 private fun MessageCard(message: String, isError: Boolean, onDismiss: () -> Unit) {
     Card(

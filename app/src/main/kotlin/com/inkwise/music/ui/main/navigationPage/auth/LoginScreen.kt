@@ -1,3 +1,10 @@
+/*
+ * 登录页（LoginScreen）
+ *
+ * 提供用户名/密码输入、记住密码开关、错误信息展示与登录按钮。
+ * 登录逻辑在 AuthViewModel.login()：成功回调 onSuccess 进入主界面，
+ * 点击"立即注册"通过 onNavigateToRegister 切换到注册页。
+ */
 package com.inkwise.music.ui.main.navigationPage.auth
 
 import androidx.compose.foundation.layout.Column
@@ -23,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
+/** 登录页主界面：表单输入、记住密码、提交登录与跳转注册 */
 @Composable
 fun LoginScreen(
     onNavigateToRegister: () -> Unit,
@@ -43,6 +51,7 @@ fun LoginScreen(
             modifier = Modifier.padding(vertical = 24.dp)
         )
 
+        // 用户名输入框，双向绑定到 ViewModel 状态
         OutlinedTextField(
             value = uiState.username,
             onValueChange = { viewModel.onUsernameChanged(it) },
@@ -53,6 +62,7 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // 密码输入框，使用掩码隐藏明文
         OutlinedTextField(
             value = uiState.password,
             onValueChange = { viewModel.onPasswordChanged(it) },
@@ -62,6 +72,7 @@ fun LoginScreen(
             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
         )
 
+        // 记住密码勾选框
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -76,6 +87,7 @@ fun LoginScreen(
             )
         }
 
+        // 展示登录结果消息（错误用红色，成功用主色）
         val message = uiState.message
         if (message != null) {
             Text(
@@ -92,6 +104,7 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // 登录按钮：加载中禁用并在按钮内显示小转圈
         Button(
             onClick = { viewModel.login(onSuccess) },
             enabled = !uiState.isLoading,
@@ -110,6 +123,7 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // 切换到注册页的入口
         TextButton(onClick = onNavigateToRegister) {
             Text("没有账号？立即注册")
         }

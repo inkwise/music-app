@@ -1,8 +1,28 @@
+/*
+ * 播放器 Sheet 收起态的"手柄"区域（迷你播放条）。
+ * 分层结构：底层 ReboundHorizontalDrag 提供横向拖拽切歌手势，
+ * 上层 MiniPlayerControl 显示封面、播放/暂停按钮与播放队列入口。
+ * 整个手柄区域点击可展开播放器 Sheet（波纹效果被关闭以避免干扰拖拽）。
+ */
 package com.inkwise.music.ui.main
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Text
 import com.inkwise.music.R
 import android.annotation.SuppressLint
 import android.graphics.BitmapFactory
@@ -30,13 +50,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -48,6 +73,8 @@ import com.inkwise.music.di.MusicAppEntryPoint
 import com.inkwise.music.ui.player.PlayerViewModel
 import com.inkwise.music.ui.theme.LocalAppDimens
 import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 // 手柄区域
@@ -56,12 +83,15 @@ import java.io.File
 @Composable
 fun controlContent(
     modifier: Modifier,
+    coverFlight: CoverFlightState,
+    expandProgress: Float,
     onClick: () -> Unit,
     showPlayQueue: () -> Unit,
     playerViewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val dimens = LocalAppDimens.current
 
+    // 手柄容器：高度固定为 peekHeight，整块可点击展开 Sheet（点击与拖拽手势互不冲突）
     Box(
         modifier =
             modifier
@@ -80,13 +110,26 @@ fun controlContent(
             onNext = { playerViewModel.skipToNext() },
         )
         // 控制层
-        MiniPlayerControl(showPlayQueue = showPlayQueue)
+        MiniPlayerControl(
+            coverFlight = coverFlight,
+            expandProgress = expandProgress,
+            showPlayQueue = showPlayQueue,
+        )
     }
 }
 
+/**
+ * 迷你播放条内容（对齐椒盐音乐样式）：
+ * 浅灰白底（#F9F9F9）上一行排开——封面缩略图（50dp、3dp 圆角）、
+ * 歌名（16sp 粗体近黑）+ 当前歌词行（12sp 灰，无歌词时回退歌手名）、
+ * 播放/暂停按钮（图标 20dp）与播放队列入口（图标 26dp）。
+ * 顺序在 [controlContent] 中位于拖拽手势层之上，自身不处理横滑手势。
+ */
 @Composable
 fun MiniPlayerControl(
     modifier: Modifier = Modifier,
+    coverFlight: CoverFlightState? = null,
+    expandProgress: Float = 0f,
     onIcon1Click: () -> Unit = {},
     onIcon2Click: () -> Unit = {},
     showPlayQueue: () -> Unit = {},
@@ -96,6 +139,9 @@ fun MiniPlayerControl(
     val currentSong = playbackState.currentSong
     val coverUri = currentSong?.albumArt
     val context = LocalContext.current
+    val lyricsState by playerViewModel.lyricsState.collectAsState()
+    val currentLyricsLine =
+        lyricsState.lyrics?.lines?.getOrNull(lyricsState.highlight?.lineIndex ?: -1)?.text
     val prefs = remember {
         EntryPointAccessors.fromApplication(
             context.applicationContext,
@@ -103,20 +149,54 @@ fun MiniPlayerControl(
         ).prefsManager
     }
 
+    // 内嵌封面兜底图：MediaMetadataRetriever 解码是重 IO，放 IO 线程算好再发布到状态，
+    // ImageView 的 update 回调只读状态（原先在主线程同步解码，进页/切歌会掉帧）
+    var embeddedArt by remember(currentSong?.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(currentSong?.id, coverUri) {
+        embeddedArt =
+            if (coverUri.isNullOrBlank()) {
+                withContext(Dispatchers.IO) { extractEmbeddedArt(currentSong) }
+            } else {
+                null
+            }
+        // 本地歌内嵌封面（全尺寸解码）同步给飞行层作最早就绪的兜底图：
+        // 冷启动后高清共享位图尚未解码时，首拖也能立即起飞
+        embeddedArt?.let { coverFlight?.immediateBitmap = it.asImageBitmap() }
+    }
+
+    // 椒盐配色：浅色主题播放条底 #F9F9F9、副文字 #8C8C8C（实测椒盐原值）；
+    // 深色主题回退到 Material 色板
+    val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val barBackground = if (isLightTheme) Color(0xFFF9F9F9) else MaterialTheme.colorScheme.surface
+    val titleColor = MaterialTheme.colorScheme.onSurface
+    val subtitleColor = if (isLightTheme) Color(0xFF8C8C8C) else MaterialTheme.colorScheme.onSurfaceVariant
+
     Row(
         modifier =
             modifier
                 .fillMaxWidth()
                 // .height(56.dp)
                 .fillMaxHeight()
-                .padding(horizontal = 12.dp),
+                .background(barBackground)
+                .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier =
                 Modifier
                     .size(50.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    // 飞行封面接管期间隐藏自身（顶层飞行封面在同一位置绘制，无缝衔接）
+                    .graphicsLayer {
+                        alpha =
+                            if (coverFlight != null && coverFlight.shouldFly(expandProgress)) {
+                                0f
+                            } else {
+                                1f
+                            }
+                    }
+                    // 起点锚点：实测窗口坐标随 Sheet 拖拽每帧刷新，飞行路径据此精确对位
+                    .onGloballyPositioned { coverFlight?.startBounds = it.boundsInRoot() }
+                    .clip(RoundedCornerShape(3.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
@@ -128,6 +208,8 @@ fun MiniPlayerControl(
                 tint = Color.Unspecified,
             )
 
+            // 封面加载：用原生 ImageView + Glide 而非 AsyncImage，
+            // 以便带鉴权头请求网络封面，并支持本地文件内嵌封面兜底
             AndroidView(
                 modifier = Modifier.matchParentSize(),
                 factory = { context ->
@@ -138,6 +220,7 @@ fun MiniPlayerControl(
                 update = { imageView ->
                     val uri = coverUri
                     if (!uri.isNullOrBlank()) {
+                        // 远程封面需要附带 Bearer Token，否则服务端会返回 401
                         val token = prefs.cachedAuthToken
                         val model: Any =
                             if (token != null && (uri.startsWith("http://") || uri.startsWith("https://"))) {
@@ -153,10 +236,39 @@ fun MiniPlayerControl(
                         Glide
                             .with(imageView)
                             .load(model)
+                            // 略高于视口采样：加载完成后回传给飞行层作即时兜底图
+                            //（冷启动首拖时高清共享位图未就绪，用这张先起飞）
+                            .override(560)
+                            .listener(
+                                object : com.bumptech.glide.request.RequestListener<android.graphics.drawable.Drawable> {
+                                    override fun onLoadFailed(
+                                        e: com.bumptech.glide.load.engine.GlideException?,
+                                        model: Any?,
+                                        target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>,
+                                        isFirstResource: Boolean,
+                                    ): Boolean = false
+
+                                    override fun onResourceReady(
+                                        resource: android.graphics.drawable.Drawable,
+                                        model: Any,
+                                        target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>,
+                                        dataSource: com.bumptech.glide.load.DataSource,
+                                        isFirstResource: Boolean,
+                                    ): Boolean {
+                                        val bmp =
+                                            (resource as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                                        if (bmp != null) {
+                                            coverFlight?.immediateBitmap = bmp.asImageBitmap()
+                                        }
+                                        return false
+                                    }
+                                },
+                            )
                             .error(R.drawable.ic_song_cover)
                             .into(imageView)
                     } else {
-                        val embedded = extractEmbeddedArt(currentSong)
+                        // 非网络封面：本地歌曲优先读取音频文件内嵌的专辑图（IO 线程已解析，见 embeddedArt）
+                        val embedded = embeddedArt
                         if (embedded != null) {
                             imageView.setImageBitmap(embedded)
                         } else {
@@ -166,11 +278,45 @@ fun MiniPlayerControl(
                 },
             )
         }
-        // 中间撑开
-        Spacer(modifier = Modifier.weight(1f))
+
+        // 中间文字列：歌名 + 当前歌词行（无歌词回退歌手名），均单行省略。
+        // 显式 lineHeight 压缩默认行盒空隙，使两行视觉间距 ≈ 椒盐（19px ≈ 5.4dp）
+        Spacer(modifier = Modifier.width(13.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = currentSong?.title ?: "",
+                color = titleColor,
+                fontSize = 15.sp,
+                lineHeight = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            AnimatedContent(
+                targetState = currentLyricsLine,
+                transitionSpec = {
+                    (fadeIn(tween(280)) + slideInVertically(tween(280)) { it / 4 }) togetherWith
+                        fadeOut(tween(180))
+                },
+                label = "MiniBarLyricsTransition",
+            ) { line ->
+                Text(
+                    text = line ?: currentSong?.artist ?: "",
+                    color = subtitleColor,
+                    fontSize = 12.sp,
+                    lineHeight = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
 
         IconButton(onClick = { playerViewModel.playPause() }) {
-            Icon( 
+            Icon(
                 //if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 painter =
                         painterResource(
@@ -193,7 +339,7 @@ fun MiniPlayerControl(
             contentDescription = "播放列表",
             modifier =
                 Modifier
-                    .size(28.dp)
+                    .size(26.dp)
                     .clickable {
                         showPlayQueue()
                     },
@@ -201,8 +347,13 @@ fun MiniPlayerControl(
     }
 }
 
+/**
+ * 从本地音频文件中提取内嵌专辑封面，返回位图；无封面或解析失败时返回 null。
+ * 仅处理本地歌曲，远程歌曲不走此逻辑。涉及磁盘 IO 与图片解码，禁止在主线程调用。
+ */
 private fun extractEmbeddedArt(song: com.inkwise.music.data.model.Song?): android.graphics.Bitmap? {
     if (song == null || !song.isLocal) return null
+    // 优先用 path，为空时从 uri 推导出本地文件路径（排除网络地址）
     val path = song.path.ifBlank { null } ?: run {
         val uri = song.uri
         if (uri.startsWith("file://")) {

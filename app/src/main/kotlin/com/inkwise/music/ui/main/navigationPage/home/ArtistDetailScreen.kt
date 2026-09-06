@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -194,11 +195,22 @@ fun ArtistDetailScreen(
     }
 
     // Song info dialog
+    // 打开时异步读取该歌曲的音频指纹；关闭时清空，避免下次弹窗闪现旧数据
+    var infoFingerprint by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(infoSong) {
+        val song = infoSong
+        infoFingerprint = if (song != null) {
+            detailViewModel.getFingerprint(song.id)
+        } else null
+    }
     infoSong?.let { song ->
         SongInfoDialog(
             song = song,
-            fingerprint = null,
-            onDismiss = { infoSong = null },
+            fingerprint = infoFingerprint,
+            onDismiss = {
+                infoSong = null
+                infoFingerprint = null
+            },
         )
     }
 }

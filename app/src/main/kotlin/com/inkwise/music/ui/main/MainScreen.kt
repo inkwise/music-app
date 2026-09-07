@@ -3,7 +3,7 @@
  * - 主内容区（scaffold 内容体）：NavigationContent，即侧边栏 + 顶栏 + 各导航页面；
  * - Sheet 收起态：只露出 peekHeight 高度的迷你播放条（controlContent）；
  * - Sheet 展开态：显示播放器主页/播放列表（playerScreen，Pager 两页）。
- * 两种形态通过 expandProgress（0f~1f）做交叉透明度过渡，避免跳变。
+ * 播放页 Sheet 整页升起（内容完整渲染），迷你栏被覆盖（椒盐式）。
  */
 package com.inkwise.music.ui.main
 
@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +38,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -44,6 +47,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp.Companion.Infinity
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -63,19 +68,32 @@ fun MainScreen() {
     val scaffoldState = rememberBottomSheetScaffoldState()
     val scope = rememberCoroutineScope()
 
-    // Sheet 展开进度：0 = 完全收起（只露手柄），1 = 完全展开（播放器）
-    var expandProgress by remember { mutableStateOf(0f) }
-    // 飞行封面转场状态：迷你播放条封面 ↔ 播放页大封面的弧线跟随动画（椒盐式）
-    val coverFlight = remember { CoverFlightState() }
-    // 共享封面加载器需要当前歌曲封面 uri（与迷你条/播放页同源）
-    val playerViewModel: PlayerViewModel = hiltViewModel()
-    val playbackState by playerViewModel.playbackState.collectAsState()
     // Sheet 内容实测高度（px）：用于计算"收起态 offset"= sheetHeight - peekHeight。
     // 不能用首帧 offset 当基准——展开态旋转屏幕重建后首帧 offset≈0，会把展开误判为收起
     var sheetHeightPx by remember { mutableStateOf(0f) }
     val density = LocalDensity.current
     // val peekHeightPx = with(density) { dimens.sheetPeekHeightDp.toPx() }
     val peekHeightPx = with(density) { peekHeight.toPx() }
+
+    // 展开进度 p（0 收起 → 1 展开）：椒盐 iu0 管线的驱动源，
+    // 仅被各 graphicsLayer/offset 的 lambda 在 draw 阶段直读（拖拽时零重组）
+    var progress by remember { mutableFloatStateOf(0f) }
+
+    // PlayerSurface（椒盐 12.3.1）：morph 表面从迷你栏封面 bounds 长大到全屏。
+    // 起点形状由布局常量直接计算（封面 50dp、左 16dp、垂直居中于迷你栏），
+    // 无需实测——彻底避开冷启动布局测量不可靠的问题
+    val coverSurface = remember { CoverSurfaceState() }
+    var boxSizePx by remember { mutableStateOf(IntSize.Zero) }
+    val miniCornerRadiusPx = with(density) { 3.dp.toPx() }
+
+    val playerViewModel: PlayerViewModel = hiltViewModel()
+    val playbackState by playerViewModel.playbackState.collectAsState()
+
+    // 共享封面位图（morph 面板内铺满绘制，全程同一张图）
+    SharedCoverLoader(
+        coverUri = playbackState.currentSong?.albumArt,
+        state = coverSurface,
+    )
 
     val context = LocalContext.current
     val prefsManager =
@@ -105,24 +123,18 @@ fun MainScreen() {
             pagerState.scrollToPage(savedPage.intValue)
         }
     }
-    // 监听 BottomSheet 拖拽
+    // 监听 BottomSheet 拖拽：只更新 progress 状态（消费方全在 draw 阶段 lambda 里）
     LaunchedEffect(scaffoldState.bottomSheetState) {
         snapshotFlow {
             scaffoldState.bottomSheetState.requireOffset()
         }.collect { offset: Float ->
-            // 进度 = 距"完全展开"的程度 / 总可拖拽距离（与首帧状态无关，旋转重建后仍正确）
             val maxOffset = sheetHeightPx - peekHeightPx
-            expandProgress =
+            progress =
                 if (maxOffset > 1f) {
                     ((maxOffset - offset) / maxOffset).coerceIn(0f, 1f)
                 } else {
                     0f
                 }
-            // 冻结飞行起点：折叠态持续对齐迷你封面实测屏幕位置，拖拽开始后冻结——
-            // 头部水平段在屏幕上纯水平右移（不随 Sheet 上移变成斜线）
-            if (expandProgress < 0.01f) {
-                coverFlight.anchorStart = coverFlight.startBounds
-            }
         }
     }
 
@@ -134,41 +146,52 @@ fun MainScreen() {
         sheetShape = RectangleShape,
         // 横屏下 sheet 不限制最大宽度（M3 默认 640dp 会让播放器两侧露出主页内容）
         sheetMaxWidth = Dp.Infinity,
-        // Sheet 内容：播放器与迷你控制条叠加在同一 Box 内，用透明度切换形态
+        // Sheet 内容：播放器与迷你控制条叠加，透明度按椒盐 iu0 公式由进度驱动
+        //（graphicsLayer 直读，draw 阶段取值，拖拽时零重组）
         sheetContent = {
             Box(
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .onSizeChanged { sheetHeightPx = it.height.toFloat() }
-                        // Sheet 内容盒原点（root 坐标）：终点锚点由 root 坐标换算成
-                        // Sheet 局部坐标时使用（CoverFlightState.sheetOrigin）
-                        .onGloballyPositioned { coverFlight.sheetOrigin = it.boundsInRoot().topLeft },
+                        .onSizeChanged { sheetHeightPx = it.height.toFloat() },
             ) {
-                // 背景播放器：展开时显示
+                // 播放页（完整渲染；p<0.95 期间被 PlayerSurface morph 面板遮蔽）
                 playerScreen(
                     pagerState = pagerState,
                     sheetState = sheetState,
-                    coverFlight = coverFlight,
-                    expandProgress = expandProgress,
-                    modifier = Modifier.alpha(expandProgress),
                 )
 
-                // 控制栏：收起时显示。飞行动画已接管时快速隐去（前 25% 进度内 alpha→0），
-                // 对齐椒盐"一展开迷你条即让位、封面独自飞行"的观感；
-                // 尚未接管（如共享位图仍在解码）时保持原速渐隐，封面留在原位可见，
-                // 待接管后由飞行封面的补间从当前位置平滑接走（CoverFlight.kt）
+                // PlayerSurface morph 面板（椒盐 12.3.1）：z 在迷你栏与播放页之上。
+                // 迷你条封面在 Sheet 局部系：宽 50dp、水平左 16dp、垂直居中于 peek 区
+                val peekPx = with(density) { peekHeight.toPx() }
+                val barH = with(density) { dimens.sheetPeekHeightDp.toPx() }
+                val coverSidePx = with(density) { 50.dp.toPx() }
+                val coverLeftPx = with(density) { 16.dp.toPx() }
+                val miniBoundsLocal =
+                    Rect(
+                        coverLeftPx,
+                        (barH - coverSidePx) / 2f,
+                        coverLeftPx + coverSidePx,
+                        (barH + coverSidePx) / 2f,
+                    )
+                PlayerSurfaceOverlay(
+                    state = coverSurface,
+                    progress = progress,
+                    miniBoundsLocal = miniBoundsLocal,
+                    sheetVisibleHeight = peekPx + progress * (sheetHeightPx - peekPx),
+                    fullWidthPx = boxSizePx.width.toFloat(),
+                    fullCornerRadiusPx = 0f,
+                    miniCornerRadiusPx = miniCornerRadiusPx,
+                )
+
+                // 迷你播放栏（封面 scale = 0.95 + 0.05×p，椒盐 iu0 同式；
+                // 封面区域被 PlayerSurface 面板从进度 0 起遮蔽接管）
                 controlContent(
-                    coverFlight = coverFlight,
-                    expandProgress = expandProgress,
+                    coverScaleProvider = { 0.05f * progress + 0.95f },
                     modifier =
-                        Modifier.alpha(
-                            if (coverFlight.shouldFly(expandProgress)) {
-                                (1f - expandProgress * 4f).coerceIn(0f, 1f)
-                            } else {
-                                1f - expandProgress
-                            },
-                        ),
+                        Modifier
+                            .fillMaxWidth()
+                            .height(dimens.sheetPeekHeightDp),
                     onClick = {
                         scope.launch {
                             scaffoldState.bottomSheetState.expand()
@@ -182,19 +205,6 @@ fun MainScreen() {
                             scaffoldState.bottomSheetState.expand()
                         }
                     },
-                )
-
-                // 飞行封面覆盖层：展开/折叠过程中由它接管两张真实封面的显示，
-                // 放在 Box 最后一个子级 → 天然置顶（椒盐式封面弧线跟随动画）。
-                // SharedCoverLoader 预解码全分辨率共享位图，全程只绘制这一份内容
-                SharedCoverLoader(
-                    coverUri = playbackState.currentSong?.albumArt,
-                    flight = coverFlight,
-                )
-                FlyingCoverOverlay(
-                    flight = coverFlight,
-                    progress = expandProgress,
-                    modifier = Modifier.fillMaxSize(),
                 )
             }
             // --- 核心：将 BackHandler 放在这里 ---
@@ -216,12 +226,16 @@ fun MainScreen() {
             }
         },
     ) {
-        // 主内容区：侧边栏 + 顶栏 + 导航页面（Sheet 收起时就是"主页"）
-        NavigationContent(
-            sheetState = sheetState,
-            pagerState = pagerState,
-            scope = scope,
-        )
+        // 主内容区：侧边栏 + 顶栏 + 导航页面（Sheet 收起时就是"主页"）+
+        // PlayerSurface morph 覆盖层（置顶；迷你栏在 sheetContent 顶部，被面板接管）
+        Box(modifier = Modifier.fillMaxSize()) {
+            NavigationContent(
+                sheetState = sheetState,
+                pagerState = pagerState,
+                scope = scope,
+            )
+
+        }
     }
 }
 

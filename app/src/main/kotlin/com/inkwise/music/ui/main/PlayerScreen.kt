@@ -77,8 +77,6 @@ fun playerScreen(
     modifier: Modifier = Modifier,
     pagerState: PagerState,
     sheetState: SheetState? = null,
-    coverFlight: CoverFlightState? = null,
-    expandProgress: Float = 1f,
     playerViewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val playbackState by playerViewModel.playbackState.collectAsState()
@@ -213,7 +211,6 @@ fun playerScreen(
                 coverAccent = Color(accent)
                 coverBitmap = bitmap
                 // 同步给飞行封面作即时兜底图：高清共享位图未就绪时用 280px 先起飞
-                coverFlight?.immediateBitmap = bitmap.asImageBitmap()
             }
         }
     }
@@ -303,8 +300,6 @@ fun playerScreen(
                         pagerState = pagerState,
                         animatedThemeColor = animatedThemeColor,
                         sheetState = sheetState,
-                        coverFlight = coverFlight,
-                        expandProgress = expandProgress,
                     )
                 }
 

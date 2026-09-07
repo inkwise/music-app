@@ -83,8 +83,7 @@ import java.io.File
 @Composable
 fun controlContent(
     modifier: Modifier,
-    coverFlight: CoverFlightState,
-    expandProgress: Float,
+    coverScaleProvider: () -> Float = { 1f },
     onClick: () -> Unit,
     showPlayQueue: () -> Unit,
     playerViewModel: PlayerViewModel = hiltViewModel(),
@@ -111,8 +110,7 @@ fun controlContent(
         )
         // 控制层
         MiniPlayerControl(
-            coverFlight = coverFlight,
-            expandProgress = expandProgress,
+            coverScaleProvider = coverScaleProvider,
             showPlayQueue = showPlayQueue,
         )
     }
@@ -128,8 +126,7 @@ fun controlContent(
 @Composable
 fun MiniPlayerControl(
     modifier: Modifier = Modifier,
-    coverFlight: CoverFlightState? = null,
-    expandProgress: Float = 0f,
+    coverScaleProvider: () -> Float = { 1f },
     onIcon1Click: () -> Unit = {},
     onIcon2Click: () -> Unit = {},
     showPlayQueue: () -> Unit = {},
@@ -159,9 +156,6 @@ fun MiniPlayerControl(
             } else {
                 null
             }
-        // 本地歌内嵌封面（全尺寸解码）同步给飞行层作最早就绪的兜底图：
-        // 冷启动后高清共享位图尚未解码时，首拖也能立即起飞
-        embeddedArt?.let { coverFlight?.immediateBitmap = it.asImageBitmap() }
     }
 
     // 椒盐配色：浅色主题播放条底 #F9F9F9、副文字 #8C8C8C（实测椒盐原值）；
@@ -185,17 +179,13 @@ fun MiniPlayerControl(
             modifier =
                 Modifier
                     .size(50.dp)
-                    // 飞行封面接管期间隐藏自身（顶层飞行封面在同一位置绘制，无缝衔接）
+                    // 椒盐 iu0：封面槽位 scale = 0.95 + 0.05×进度（graphicsLayer 直读，
+                    // 拖拽时封面随手微放大——"活"感来源）
                     .graphicsLayer {
-                        alpha =
-                            if (coverFlight != null && coverFlight.shouldFly(expandProgress)) {
-                                0f
-                            } else {
-                                1f
-                            }
+                        val sc = coverScaleProvider()
+                        scaleX = sc
+                        scaleY = sc
                     }
-                    // 起点锚点：实测窗口坐标随 Sheet 拖拽每帧刷新，飞行路径据此精确对位
-                    .onGloballyPositioned { coverFlight?.startBounds = it.boundsInRoot() }
                     .clip(RoundedCornerShape(3.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
@@ -236,34 +226,6 @@ fun MiniPlayerControl(
                         Glide
                             .with(imageView)
                             .load(model)
-                            // 略高于视口采样：加载完成后回传给飞行层作即时兜底图
-                            //（冷启动首拖时高清共享位图未就绪，用这张先起飞）
-                            .override(560)
-                            .listener(
-                                object : com.bumptech.glide.request.RequestListener<android.graphics.drawable.Drawable> {
-                                    override fun onLoadFailed(
-                                        e: com.bumptech.glide.load.engine.GlideException?,
-                                        model: Any?,
-                                        target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>,
-                                        isFirstResource: Boolean,
-                                    ): Boolean = false
-
-                                    override fun onResourceReady(
-                                        resource: android.graphics.drawable.Drawable,
-                                        model: Any,
-                                        target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>,
-                                        dataSource: com.bumptech.glide.load.DataSource,
-                                        isFirstResource: Boolean,
-                                    ): Boolean {
-                                        val bmp =
-                                            (resource as? android.graphics.drawable.BitmapDrawable)?.bitmap
-                                        if (bmp != null) {
-                                            coverFlight?.immediateBitmap = bmp.asImageBitmap()
-                                        }
-                                        return false
-                                    }
-                                },
-                            )
                             .error(R.drawable.ic_song_cover)
                             .into(imageView)
                     } else {

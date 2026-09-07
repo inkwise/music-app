@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,6 +55,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -126,8 +131,6 @@ fun BottomDrawerContent(
     pagerState: PagerState,
     animatedThemeColor: Color,
     sheetState: SheetState? = null,
-    coverFlight: CoverFlightState? = null,
-    expandProgress: Float = 1f,
     playerViewModel: PlayerViewModel = hiltViewModel(),
     mainViewModel: MainViewModel = hiltViewModel(),
 ) {
@@ -208,12 +211,6 @@ fun BottomDrawerContent(
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
-    // 飞行封面终点有效性：内层横向 Pager 停在封面页（页 1）才允许封面弧线转场；
-    // 滑到歌词页/歌曲信息页（含滑动离开途中）即关闭，退化为普通交叉淡化（椒盐式行为）。
-    // 组合期直接赋值（结构等价写入不触发重组），避免协程链路的首帧延迟
-    coverFlight?.endAnchorValid =
-        !isLandscape && pagerStateB.currentPage == 1 && pagerStateB.targetPage == 1
 
     if (isLandscape) {
         // ---------- 横屏：椒盐式两栏 —— 左「封面 + 单行歌词」/ 右「歌名/进度/控制」 ----------
@@ -515,71 +512,38 @@ fun BottomDrawerContent(
                                 )
                             }
                         } else {
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                // 封面 + 歌词作为整体在「标题 ↔ 进度条」剩余空间内垂直居中，
-                                // 歌词因此位于封面与进度条的中部（椒盐式布局）
-                                verticalArrangement = Arrangement.Center,
-                            ) {
-                                // -------------------------------
-                                // 封面（宽撑满、1:1，随整体居中）
-                                // -------------------------------
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .aspectRatio(1f)
-                                            // 飞行封面接管期间隐藏自身（外层已有 alpha(expandProgress)，
-                                            // 此处相乘后为 0；端点/无动画场景保持原显示逻辑）
-                                            .graphicsLayer {
-                                                alpha =
-                                                    if (coverFlight != null &&
-                                                        coverFlight.shouldFly(expandProgress)
-                                                    ) {
-                                                        0f
-                                                    } else {
-                                                        1f
-                                                    }
-                                            }
-                                            // 终点锚点：仅竖屏记录（横屏沿用无动画原行为）。
-                                            // 实测正方形 → 转 Sheet 局部坐标（endLocal）；
-                                            // Sheet 完全展开时同步持久化（冷启动直接读缓存，
-                                            // 不依赖本就不可靠的冷启动测量，详见 CoverFlight.kt 头注）
-                                            .then(
-                                                if (isLandscape) {
-                                                    Modifier
-                                                } else {
-                                                    Modifier.onGloballyPositioned {
-                                                        coverFlight?.let { f ->
-                                                            val b = it.boundsInRoot()
-                                                            val square =
-                                                                b.width > 0f &&
-                                                                    b.height > 0f &&
-                                                                    kotlin.math.abs(b.width - b.height) <
-                                                                    b.width * 0.1f
-                                                            if (square) {
-                                                                val o = f.sheetOrigin
-                                                                val local =
-                                                                    Rect(
-                                                                        b.left - o.x,
-                                                                        b.top - o.y,
-                                                                        b.right - o.x,
-                                                                        b.bottom - o.y,
-                                                                    )
-                                                                f.endLocal = local
-                                                                if (sheetState?.currentValue ==
-                                                                    SheetValue.Expanded
-                                                                ) {
-                                                                    CoverFlightState.persist(context, local)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                },
-                                            )
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                                    contentAlignment = Alignment.Center,
+                            // 椒盐 iy1 式封面布局：BoxWithConstraints 内由一个 spring 驱动的
+                            // 单标量（top padding）定位封面，尺寸为静态公式值——
+                            // 封面的移动完全由布局求解产生（与椒盐实现原理一致）
+                            BoxWithConstraints {
+                                // 尺寸公式（椒盐原样）：边长 = clamp(maxWidth-60dp, 0, maxHeight-44dp)
+                                val coverSide =
+                                    minOf(maxWidth - 60.dp, maxHeight - 44.dp).coerceAtLeast(0.dp)
+                                // 歌词区高度（椒盐原样）：空间足够 68dp，否则 24dp
+                                val lyricsHeight = if (maxHeight - 86.dp > coverSide) 68.dp else 24.dp
+                                // top padding 目标（椒盐原样）：(maxHeight - 边长 - 歌词区) / 3
+                                val targetTop = ((maxHeight - coverSide - lyricsHeight) / 3f).value
+                                // 唯一的动画：临界阻尼 spring(dampingRatio=1, stiffness=350) 驱动该标量
+                                val animatedTop by animateFloatAsState(
+                                    targetValue = targetTop,
+                                    animationSpec = spring(dampingRatio = 1f, stiffness = 350f),
+                                    label = "coverTopPadding",
+                                )
+
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    // 封面：padding(top=animated) + defaultMinSize + aspectRatio + Box(Center)
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .padding(top = animatedTop.dp)
+                                                .defaultMinSize(minWidth = coverSide, minHeight = coverSide)
+                                                .aspectRatio(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                        contentAlignment = Alignment.Center,
                                     ) {
                                         AndroidView(
                                             modifier = Modifier.matchParentSize(),
@@ -618,19 +582,19 @@ fun BottomDrawerContent(
                                         )
                                     }
 
-                                // -------------------------------
-                                // 歌词区域：封面下方的 CoverLyricsView（三行、靠左，不影响封面）；
-                                // 高度 = 3 行 × 21dp 行高 + 1dp 余量；与封面间距对齐椒盐（约 36dp）
-                                // -------------------------------
-                                Spacer(modifier = Modifier.height(36.dp))
-                                CoverLyricsView(
-                                    viewModel = playerViewModel,
-                                    darkMode = coverLyricsDark,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .height(64.dp),
-                                )
+                                    // 歌词区域（椒盐原样高度 68/24dp）：CoverLyricsView 三行、靠左，
+                                    // 宽度与封面同宽（封面已水平居中，歌词左缘与封面左缘对齐）
+                                    Spacer(modifier = Modifier.height(lyricsHeight / 3))
+                                    val coverWidthDp = coverSide
+                                    CoverLyricsView(
+                                        viewModel = playerViewModel,
+                                        darkMode = coverLyricsDark,
+                                        modifier =
+                                            Modifier
+                                                .width(coverWidthDp)
+                                                .height(lyricsHeight),
+                                    )
+                                }
                             }
                         }
                     }

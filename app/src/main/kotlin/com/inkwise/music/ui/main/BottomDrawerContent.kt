@@ -521,8 +521,11 @@ fun BottomDrawerContent(
                                     minOf(maxWidth - 60.dp, maxHeight - 44.dp).coerceAtLeast(0.dp)
                                 // 歌词区高度（椒盐原样）：空间足够 68dp，否则 24dp
                                 val lyricsHeight = if (maxHeight - 86.dp > coverSide) 68.dp else 24.dp
-                                // top padding 目标（椒盐原样）：(maxHeight - 边长 - 歌词区) / 3
-                                val targetTop = ((maxHeight - coverSide - lyricsHeight) / 3f).value
+                                // top padding 目标（椒盐原样）：(maxHeight - 边长 - 歌词区) / 3。
+                                // 必须钳制非负：拖拽初期面板高度受限（或首帧约束未定）时公式为负，
+                                // 负 padding 会直接抛 IllegalArgumentException
+                                val targetTop =
+                                    (((maxHeight - coverSide - lyricsHeight) / 3f).value).coerceAtLeast(0f)
                                 // 唯一的动画：临界阻尼 spring(dampingRatio=1, stiffness=350) 驱动该标量
                                 val animatedTop by animateFloatAsState(
                                     targetValue = targetTop,

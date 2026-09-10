@@ -14,6 +14,7 @@ import android.content.*
 import android.content.pm.PackageInfo
 import android.content.res.Resources
 import android.graphics.Typeface
+import com.inkwise.music.ui.main.CoverFlightBootstrap
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -67,6 +68,36 @@ class MusicApp : Application() {
         CrashHandler.instance.registerGlobal(this)
     }
 
+    /**
+     * 同步预解码当前歌封面（冷启动首拖的飞行封面兜底）。
+     * 仅处理本地来源：albumArt 文件直接解码，缺失时读音频内嵌封面；
+     * 网络封面不阻塞启动，走后续异步加载。
+     */
+    private fun decodeCoverSynchronously(song: com.inkwise.music.data.model.Song?) {
+        if (song == null) return
+        val albumArt = song.albumArt
+        if (!albumArt.isNullOrBlank()) {
+            if (albumArt.startsWith("http")) return
+            runCatching { android.graphics.BitmapFactory.decodeFile(albumArt) }.getOrNull()?.let {
+                CoverFlightBootstrap.cachedUri = albumArt
+                CoverFlightBootstrap.cachedBitmap = it
+                return
+            }
+        }
+        val path = song.path.ifBlank { song.uri.removePrefix("file://") }
+        if (path.isBlank() || path.startsWith("http") || !java.io.File(path).exists()) return
+        runCatching {
+            val retriever = android.media.MediaMetadataRetriever()
+            retriever.setDataSource(path)
+            val bytes = retriever.embeddedPicture
+            retriever.release()
+            bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+        }.getOrNull()?.let {
+            CoverFlightBootstrap.cachedUri = albumArt ?: path
+            CoverFlightBootstrap.cachedBitmap = it
+        }
+    }
+
     /** 恢复上次退出时的播放队列与进度，让用户能继续收听。 */
     private fun restoreSavedPlaybackState() {
         val entryPoint = EntryPoints.get(this, MusicAppEntryPoint::class.java)
@@ -82,6 +113,8 @@ class MusicApp : Application() {
             val songs = saved.queueIds.mapNotNull { songDao.getSongById(it) }
             if (songs.isNotEmpty()) {
                 MusicPlayerManager.restorePlaybackState(songs, saved.currentIndex, saved.lastPosition)
+                // 同步预解码当前歌封面：冷启动首拖（早于一切异步图片加载）也有图可飞
+                decodeCoverSynchronously(songs.getOrNull(saved.currentIndex))
             }
         }
     }
